@@ -61,7 +61,7 @@ export function download(name, data, type = 'application/octet-stream') {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/** Ask the user for a file; resolves to Uint8Array. */
+/** Ask the user for a file; resolves to Uint8Array (with a .fileName property). */
 export function pickFile(accept = '') {
   return new Promise((resolve, reject) => {
     const inp = h('input', { type: 'file', accept, style: { display: 'none' } });
@@ -69,7 +69,9 @@ export function pickFile(accept = '') {
       const f = inp.files && inp.files[0];
       inp.remove();
       if (!f) return reject(new Error('no file'));
-      resolve(new Uint8Array(await f.arrayBuffer()));
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      bytes.fileName = f.name;
+      resolve(bytes);
     });
     document.body.appendChild(inp); inp.click();
   });

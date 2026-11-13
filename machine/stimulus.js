@@ -1,19 +1,29 @@
 // Crank / cam / vehicle-speed stimulus (brief sec. 5). Edges are scheduled in E cycles and delivered to the timer
 // (TIC1 = PA2 rising, TIC2 = PA1 falling) and to the IRQ pin (falling) at the exact cycle.
 //
-// Wheel model (GUESS, editable): 20 TIC1 rising edges per 720 deg. Generator edge 2s is the "cylinder edge" that
-// starts firmware slot s, edge 2s+1 is that slot's "intermediate edge" (this holds once the firmware has synced on
-// the candidate cam pattern). Cam pulses are placed in "the second half of slot s" = between edge 2s+1 and 2s+2.
+// Wheel model: 20 TIC1 rising edges per 720 deg (SHOWN F8D5-F8E5; the 1995 manual describes 5 groups of 2 crank
+// slots per revolution). Generator edge 2s is the "cylinder edge" that starts firmware slot s, edge 2s+1 is that
+// slot's "intermediate edge" (this holds once the firmware has synced on the cam pattern). Cam pulses are placed in
+// "the second half of slot s" = between edge 2s+1 and 2s+2.
+// Edge SPACING is not known: the ISR never compares intervals, so the firmware accepts any. The default is the even
+// 36/36 deg (not the real wheel); pairedEdgeAngles(18) gives the paired 18/54 deg layout inferred from the JTEC
+// analysis of the same engine (GUESS). Sync, slot map and rpm are identical for both.
 
 export const CAM_PATTERNS = {
-  // brief sec. 5 candidate (derived from the sync rules, NOT measured)
+  // single / double / single: derived from the sync rules (F853-F8C6, FD59-FDA4) and matching the 1995 manual's cam
+  // sprocket drawing (EXTERNAL). Pulse positions inside the slot, polarity and phase to TDC are not measured.
   candidate: [{ slot: 4, frac: 0.5 }, { slot: 7, frac: 1 / 3 }, { slot: 7, frac: 2 / 3 }, { slot: 9, frac: 0.5 }],
-  // quick test: one IRQ per cycle; the 6-edge rule (slot 2) syncs without further cam evidence
+  // quick test: one IRQ per cycle. WARNING: without the double pulse the firmware can lock 360 deg out for about
+  // half of all starting phases and never notice (only the 3rd-IRQ rule at FD76 self-corrects)
   quick: [{ slot: 9, frac: 0.5 }],
   none: [],
 };
 
 export function evenEdgeAngles() { return Array.from({ length: 20 }, (_, i) => i * 36); }
+/** Paired crank slots: cylinder edge every 72 deg, intermediate edge pairDeg after it (GUESS 18). */
+export function pairedEdgeAngles(pairDeg = 18) {
+  return Array.from({ length: 20 }, (_, i) => (i >> 1) * 72 + (i & 1 ? pairDeg : 0));
+}
 
 export class Stimulus {
   constructor(m) {
@@ -22,7 +32,7 @@ export class Stimulus {
     this.crankHighDeg = 10;        // PA2 high time after each rising edge (GUESS)
     this.camLowDeg = 3;            // IRQ pin low time (GUESS)
     this.camPattern = CAM_PATTERNS.candidate.map((p) => ({ ...p }));
-    this.vssPulsesPerMile = 8000;  // INFERRED
+    this.vssPulsesPerMile = 8000;  // firmware constant 115,200,000 at A4E7 (and the 1995 manual's sensor)
     this.vssLowFrac = 0.5;
     this.minVssLowUs = 200;        // F24A samples PA1 ~100 E cycles after the edge: keep it low longer than that
     this.angle = 0;                // crank angle in the 720-deg cycle at lastCycle

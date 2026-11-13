@@ -37,7 +37,7 @@ const log = (s) => process.stdout.write(s + '\n');
 function setup() {
   if (!tryRun('gh', ['repo', 'view', repo, '--json', 'name']).ok) {
     log(`creating public repo ${repo}`);
-    run('gh', ['repo', 'create', repo, '--public', '--description', 'Browser emulator of the 1995 Dodge Viper SBEC2 PCM (68HC11, 04763555)',
+    run('gh', ['repo', 'create', repo, '--public', '--description', '68HC11 emulator on a Chrysler SBEC2 board model; bundled image: 1995 Dodge Viper PCM 04763555',
       '--homepage', `https://${domain}`]);
   } else log(`repo ${repo} exists`);
 }

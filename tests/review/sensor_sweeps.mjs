@@ -37,6 +37,7 @@ console.log('  thresholds', JSON.stringify(Object.fromEntries(Object.entries(TH)
   check('air degC -> $78 monotonic', mono(at), at.map((v) => hx(v)).join(' '));
   check('air $78 within 3 C of the setting over -40..125 C', at.every((v, i) => Math.abs(v - 128 - temps[i]) <= 3), at.map((v, i) => `${temps[i]}:${v - 128}`).join(' '));
   const o2v = [0, 0.1, 0.3, 0.45, 0.6, 0.9, 1.0];
+  m.inputs.o2Mode = 'fixed';      // the sweep drives the sensor voltage directly
   const o2 = sweep((v) => { m.inputs.o2_1V = v; }, 0x79, o2v, 300);
   check('O2 1 AN2 -> $79 = V*51', o2.every((v, i) => v === Math.round(o2v[i] * 51)), o2.join(' '));
   m.inputs.coolantC = 85; m.inputs.airC = 30; m.run(3000);

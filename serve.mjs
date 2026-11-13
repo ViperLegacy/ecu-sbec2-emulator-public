@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dependency-free static server for the Viper PCM emulator GUI. Serves this folder (emulator/).
+// Dependency-free static server for the 68HC11 emulator GUI. Serves this folder (emulator/).
 //   node emulator/serve.mjs [--port 8732] [--host 127.0.0.1]      then open the printed URL
 // Environment: PORT, HOST. Only GET/HEAD; no directory listings; paths outside the folder are refused.
 import { createServer } from 'node:http';
@@ -55,6 +55,6 @@ for (const hh of hosts) {
     if (!first) return;
     first = false;
     const shown = hh === '127.0.0.1' || hh === '0.0.0.0' ? 'localhost' : hh;
-    console.log(`Viper PCM emulator: http://${shown}:${port}/   (serving ${root})`);
+    console.log(`68HC11 emulator: http://${shown}:${port}/   (serving ${root})`);
   });
 }

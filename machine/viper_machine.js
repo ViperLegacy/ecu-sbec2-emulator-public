@@ -41,6 +41,39 @@ class EventLog {
   clear() { this.n = 0; this.buf = new Array(this.size); }
 }
 
+/**
+ * Compare a 32 K image (CPU 8000-FFFF) with the bundled 04763555 image.
+ *   stock:    byte-identical
+ *   sameCode: identical outside the calibration block 8000-93FF and the EEPROM overlay B600-B7FF (the same
+ *             firmware with another calibration, e.g. after tuning edits)
+ * Everything keyed to 04763555 addresses (idle skip, pass counter, RAM names, maps, fault names, SCI decode) only
+ * applies when sameCode is true; any other image runs as plain 68HC11 code on the same board model.
+ */
+export function classifyImage(image) {
+  const ref = loadImage();
+  let stock = image.length === ref.length, sameCode = stock;
+  if (stock) {
+    for (let i = 0; i < ref.length; i++) {
+      if (image[i] === ref[i]) continue;
+      stock = false;
+      const a = 0x8000 + i;
+      if (a >= 0x9400 && !(a >= 0xB600 && a < 0xB800)) { sameCode = false; break; }
+    }
+  }
+  return { stock, sameCode, profile: sameCode ? '04763555' : 'generic' };
+}
+
+/** Normalise a dump to the 32 K the CPU sees at 8000-FFFF. Accepts 32768 bytes, or 65536 (a full 0000-FFFF map:
+ *  the upper half is used). Throws on anything else or on a reset vector that does not point into the image. */
+export function normaliseImage(bytes) {
+  let b = Uint8Array.from(bytes);
+  if (b.length === 0x10000) b = b.slice(0x8000);
+  if (b.length !== 0x8000) throw new Error(`flash dump must be 32768 bytes (CPU 8000-FFFF) or 65536 (0000-FFFF); got ${b.length}`);
+  const rv = (b[0x7FFE] << 8) | b[0x7FFF];
+  if (rv < 0x8000 || rv === 0xFFFF) throw new Error(`reset vector $${rv.toString(16).toUpperCase().padStart(4, '0')} does not point into 8000-FFFF: not a 68HC11 image for this memory map`);
+  return b;
+}
+
 export class ViperMachine {
   constructor(opts = {}) {
     this.eClock = opts.eClock ?? 2_000_000;
@@ -49,6 +82,9 @@ export class ViperMachine {
     this.data = opts.data ?? DATA;
     this.rom = opts.image ? Uint8Array.from(opts.image) : loadImage();
     if (this.rom.length !== 0x8000) throw new Error('image must be 32768 bytes (CPU 8000-FFFF)');
+    this.imageInfo = { ...classifyImage(this.rom), name: opts.imageName ?? (opts.image ? 'custom image' : '04763555 (bundled)') };
+    this.generic = this.imageInfo.profile === 'generic';
+    if (this.generic) this.idleSkip = false;       // the idle skip is keyed to the 04763555 wait loop at 9E0E
     this.mem = new Uint8Array(0x10000);
     this.ram = this.mem;                       // ram[a] for a < 0x200 is internal RAM
     this.mem.set(this.rom, 0x8000);
@@ -64,7 +100,9 @@ export class ViperMachine {
     this.sci = new SCI(this);
     this.spi = new SPI(this);
     this.asic = new Asic(this);
-    this.eeprom = new Eeprom(this, opts.eeprom ? Uint8Array.from(opts.eeprom) : loadEeprom());
+    // EEPROM default: the bundled dump, or for a supplied image whatever its own B600-B7FF holds (a full-map dump
+    // carries that car's EEPROM there; for the bundled image the two are identical)
+    this.eeprom = new Eeprom(this, opts.eeprom ? Uint8Array.from(opts.eeprom) : (opts.image ? this.rom.slice(0x3600, 0x3800) : loadEeprom()));
     this.outputs = new Outputs(this);
     this.cop = { next: Infinity, armed: false, last: 0, maxGap: 0, service: (at) => this._copTimeout(at) };
     this.stimulus = new Stimulus(this);
@@ -267,7 +305,7 @@ export class ViperMachine {
     return a & 0xFF;                           // unmapped: the multiplexed bus returns the low address byte
   }
   _write(a, v, c) {
-    if (a < 0x200) { this.mem[a] = v; if (a === 0x6D) this._onPass(c); return; }
+    if (a < 0x200) { this.mem[a] = v; if (a === 0x6D && !this.generic) this._onPass(c); return; }
     if (a >= 0x8000) {
       if (a >= 0xB600 && a < 0xB800) this.eeprom.write(a - 0xB600, v, c);
       else this.romWrites++;                   // flash is read-only (JEDEC program sequence ignored)
@@ -390,7 +428,7 @@ export class ViperMachine {
   _onInterrupt(v) {
     if (v === VEC.IRQ) this.irqLatch = false;
     const handler = (this.mem[v] << 8) | this.mem[v + 1];
-    if (handler === SPURIOUS_HANDLER) {
+    if (!this.generic && handler === SPURIOUS_HANDLER) {
       const c = this.cpu.cycles, s = this._spur;
       if (c - s.windowStart > this.eClock / 1000) { s.windowStart = c; s.count = 0; }
       s.count++;

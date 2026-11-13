@@ -187,10 +187,13 @@ export function createInputsPanel(app) {
   injMode.addEventListener('change', () => { I().injectorStatusMode = injMode.value; });
   syncs.push(() => { injMode.value = I().injectorStatusMode; });
 
-  const smartBits = [[1, 7, '$048C b7 -> $85'], [1, 6, '$048C b6 -> $85'], [3, 2, '$048E b2 (code 19)'], [3, 4, '$048E b4 (code 22)'], [3, 7, '$048E b7 (code 5C)']];
+  const smartBits = [[1, 7, '$048C b7 = 1: A/C not requested'], [1, 6, '$048C b6 -> $85 (switch, unknown)'], [3, 2, '$048E b2 (code 19)'], [3, 4, '$048E b4 (code 22)'], [3, 7, '$048E b7 (code 5C)']];
   const fdMode = h('select', ['shift', 'echo', 'value'].map((v) => h('option', { value: v }, v)));
   fdMode.addEventListener('change', () => { I().fdFeedbackMode = fdMode.value; });
   syncs.push(() => { fdMode.value = I().fdFeedbackMode; });
+  const o2Mode = h('select', { title: INPUT_INFO.o2Mode.fn }, h('option', { value: 'switching' }, 'switching (follows fuel trim)'), h('option', { value: 'fixed' }, 'fixed (sliders)'));
+  o2Mode.addEventListener('change', () => { I().o2Mode = o2Mode.value; });
+  syncs.push(() => { o2Mode.value = I().o2Mode; });
 
   const sideTxt = h('input.hex', { type: 'text', style: { width: '80px' }, value: '05', spellcheck: false });
   const sideSend = (bytes) => { M().sideChannelSend(bytes); app.flash(`side channel (R8=1) <- ${hexBytes(bytes)}`); };
@@ -223,7 +226,8 @@ export function createInputsPanel(app) {
       h('span.res', INPUT_INFO.ccdRxMessage.resource), evid('GUESS 21 00 00'), conf('low')),
     h('div.drow', h('span', '$FD feedback '), fdMode, hexField(() => hex2(I().fdFeedbackValue), (b) => { I().fdFeedbackValue = b[0] ?? 0; }, { width: 32 }),
       h('span.res', INPUT_INFO.fdFeedbackMode.resource), conf('low')),
-    h('h3', 'Side-channel status injection (SCI R8 = 1)'),
+    h('div.drow', h('span', 'O2 sensors '), o2Mode, h('span.res', INPUT_INFO.o2Mode.resource), evid('GUESS plant')),
+    h('h3', 'Ignition Control Module status injection (SCI R8 = 1)'),
     h('div.drow', sideTxt, h('button.sm', { on: { click: () => { try { sideSend(parseHexBytes(sideTxt.value)); } catch (e) { app.flash(e.message, 'bad'); } } } }, 'Send'),
       h('span.res', 'bit2 = 1 -> OR into $0115, else $0116'), conf('medium')),
     h('div.drow.wrap',

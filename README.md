@@ -1,9 +1,12 @@
 > Live: https://sbec2-emulator.viperecu.com/  
-> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, a073a02) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
+> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, a76fcf8) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
 
-# Viper 04763555 PCM emulator
+# 68HC11 emulator (SBEC2 board model)
 
-A JavaScript emulator of the 1995 Dodge Viper RT/10 SBEC2 PCM (68HC11, part 04763555). It runs the
+A JavaScript 68HC11 emulator with the board of a Chrysler SBEC2 engine controller around it. The bundled
+image is the 1995 Dodge Viper RT/10 PCM, part 04763555, and all the annotations (RAM names, maps, fault
+names, SCI decoding, engine readouts) belong to that firmware. You can load another flash dump; see
+"Loading another dump" below. With the bundled image it runs the
 real flash image (`../dumps/VIPER_04763555_8000-FFFF.bin`, SHA-256 `c6f88240...`) instruction by
 instruction, with the board around it modelled from `../data/EMULATOR_BRIEF.md`, and a browser GUI
 with inputs and outputs.
@@ -53,6 +56,26 @@ for f in tests/*.mjs tests/review/*.mjs; do node $f; done
 | gui_smoke.test.mjs | 56 passed |
 | gui_review.test.mjs | 15 passed |
 | review/*.mjs | 266 passed in 10 files (`util.mjs` holds helpers only) |
+
+## Loading another dump
+
+- **GUI:** Save / load -> "Flash dump ↑ file". The file must be 32768 bytes (what the CPU sees at 8000-FFFF) or
+  65536 bytes (a 0000-FFFF map; the upper half is used), and its reset vector must point into 8000-FFFF. The image
+  stays in the browser (local storage), is never uploaded, and the page reloads onto it. "Bundled image" goes back.
+- **Headless:** `node run_headless.mjs --image some.bin [--eeprom ee.bin] --ms 2000 --sci "16 80"`.
+- **API:** `new ViperMachine({ image: normaliseImage(bytes), imageName })`.
+
+The EEPROM (B600-B7FF) defaults to the bytes at that address in the loaded image; load a 512-byte EEPROM file to
+override it. What you get depends on the image (`machine.imageInfo`):
+
+| Image | Treated as | What applies |
+|---|---|---|
+| identical to the bundled one | `04763555`, stock | everything |
+| same code, different bytes only in 8000-93FF or B600-B7FF | `04763555`, other calibration | everything; the firmware uses the loaded tables, but the Maps panel still lists the bundled values |
+| anything else | `generic` | CPU, timer, SCI, SPI, ADC, EEPROM, the I/O at 0400 and the raw views. Not the idle skip, pass counter, RAM names, engine readouts, maps, fault names, SCI decoding, scenarios or tuning |
+
+The board model is the Viper SBEC2's. Other SBEC2 firmware expecting the same hardware gets furthest: the Jeep
+2.5 L image 56029302 boots and answers `16 80` with its own part number; 56026948 runs but stays silent on SCI.
 
 ## Architecture
 
@@ -132,13 +155,14 @@ Everything listed here is shown in the GUI with its tag.
 
 | Item | Status |
 |---|---|
-| E clock | 2 MHz, **ASSUMED** (one constant, `eClock`); every ms/rpm/baud figure depends on it |
-| Units | MAP kPa, thermistor curves, battery divider (V*16), spark 0.5 deg/count, VSS pulses/mile, `$84`: **not measured** |
-| Diagnostic line | how 62500-baud 9-bit frames become the car's 7812.5 8N1 line is unknown; the model passes bytes at the MCU's rate |
-| Side-channel device | identity and replies unknown; default reply is "no faults" (GUI can inject status bits) |
-| Crank / cam shapes | 20 even TIC1 edges per 720 deg and a **candidate** cam pattern chosen to satisfy the sync rules; real wheel unknown |
-| Cylinder numbering | slot -> cylinder 5 8 7 2 1 10 9 4 3 6 is **INFERRED** (medium) |
-| Physical outputs | `$FC` b4/b5, `$FD` b2/b6/b7, `$0440` b3, `$0400` b0/b5/b7: meaning unknown |
+| E clock | 2 MHz, measured indirectly on the car: one SCI 15 read took 33.1 ms = 3 main-loop passes (`eClock`) |
+| Units | rpm, coolant degC, 4 us tick, O2 volts, speed (`$84` = mph x 2, 8000 pulses/mile): high. Spark 0.5 deg/count, battery counts/16: medium-high. MAP kPa: medium. Intake-air curve: unverified |
+| Diagnostic line | the scan tool talks to the Ignition Control Module at 7812.5 8N1, which relays to the PCM's 62500-baud 9-bit SCI (1995 wiring diagrams). The model passes bytes at the MCU's rate; the tester-side rate after SCI 12 is unknown |
+| Side-channel device | the Ignition Control Module: fires the 5 coils and injectors 1 and 5. Its frame timing is not modelled; default reply is "no faults" (GUI can inject status bits) |
+| Crank / cam shapes | 20 TIC1 edges per 720 deg and the single / double / single cam pattern match the 1995 manual. Edge spacing (default even; `pairedEdgeAngles(18)` is a GUESS), polarity and phase to TDC: unmeasured |
+| Cylinder numbering | slot -> cylinder 5 8 7 2 1 10 9 4 3 6: high (three independent derivations). Coil number to cylinder pair: inferred |
+| Physical outputs | fans, A/C clutch, ASD, MIL, skip-shift, purge identified from their control laws (0 = ON except purge). `$FD` b2 (reverse lockout?), `$FC` b3, `$FD` b3, `$0400` b5/b7: still open |
+| O2 sensors | default is a switching model driven by the firmware's own fuel trim (**GUESS** plant, `inputs.o2Mode`); `fixed` holds the slider value |
 | COP | CONFIG.NOCOP unknown; COP model off by default (`cop: true` / GUI option) |
 | CCD message | the 93/80 SPI reply is a **GUESS** `21 00 00`; with none, fuel is inhibited ~2 s after key-on (`ccdRxMessage = null`) |
 | Power-on RAM | random fill = battery never connected (cold init); all-zero RAM passes the keep-alive sum and stays warm |

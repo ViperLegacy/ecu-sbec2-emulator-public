@@ -39,20 +39,22 @@ export function confClass(conf) {
   return 'c-unk';
 }
 
-const TICK_MS = 0.004;  // 4 us per TCNT tick at the ASSUMED 2 MHz E clock
+const TICK_MS = 0.004;  // 4 us per TCNT tick: E = 2 MHz, measured indirectly on the car (3 passes per SCI 15 read = 33.1 ms)
 
 /**
  * Scale for a RAM address (4-hex-digit key as in ram_symbols.json). f(raw) -> number|string.
  * tag: INFERRED / SHOWN / ASSUMED. These follow brief sec. 9.
  */
 export const RAM_SCALES = {
-  '006E': { f: (x) => x / 8, unit: 'rpm', tag: 'INFERRED', digits: 0 },
-  '00E7': { f: (x) => x / 8, unit: 'rpm', tag: 'INFERRED', digits: 0 },
-  '005E': { f: (x) => x * TICK_MS, unit: 'ms', tag: 'ASSUMED 2 MHz', digits: 2 },
-  '007B': { f: (x) => x - 128, unit: 'degC', tag: 'INFERRED', digits: 0 },
-  '0078': { f: (x) => x - 128, unit: 'degC', tag: 'INFERRED', digits: 0 },
+  '006E': { f: (x) => x / 8, unit: 'rpm', tag: 'SHOWN 80A0 + manual 3000 rpm gate', digits: 0 },
+  '00E7': { f: (x) => x / 8, unit: 'rpm', tag: 'SHOWN (compared with $6E)', digits: 0 },
+  '0082': { f: (x) => x / 64, unit: 'mph', tag: 'SHOWN A4E7 (8000 pulses/mile)', digits: 1 },
+  '0084': { f: (x) => x / 2, unit: 'mph', tag: 'SHOWN B958', digits: 1 },
+  '005E': { f: (x) => x * TICK_MS, unit: 'ms', tag: '4 us/tick', digits: 2 },
+  '007B': { f: (x) => x - 128, unit: 'degC', tag: 'manual curve +-3 C', digits: 0 },
+  '0078': { f: (x) => x - 128, unit: 'degC', tag: 'coolant tables; air curve unverified', digits: 0 },
   '0088': { f: (x) => x - 128, unit: 'degC', tag: 'INFERRED', digits: 0 },
-  '0080': { f: (x) => x / 16, unit: 'V', tag: 'INFERRED', digits: 2 },
+  '0080': { f: (x) => x / 16, unit: 'V', tag: 'INFERRED (16.0-16.2 counts/V)', digits: 2 },
   '0079': { f: (x) => x * 5 / 255, unit: 'V', tag: 'ASSUMED 5V=255', digits: 3 },
   '007A': { f: (x) => x * 5 / 255, unit: 'V', tag: 'ASSUMED 5V=255', digits: 3 },
   '007F': { f: (x) => x * 5 / 255, unit: 'V', tag: 'ASSUMED 5V=255', digits: 2 },
@@ -60,14 +62,14 @@ export const RAM_SCALES = {
   '0003': { f: (x) => x * 5 / 255, unit: 'V', tag: 'ASSUMED 5V=255', digits: 2 },
   '007E': { f: (x) => x * 5 / 255, unit: 'V', tag: 'ASSUMED 5V=255', digits: 2 },
   '007D': { f: (x) => x * 5 / 255, unit: 'V', tag: 'ASSUMED 5V=255', digits: 2 },
-  '0071': { f: (x) => x * 0.5, unit: 'deg', tag: 'INFERRED 0.5/count', digits: 1 },
-  '0075': { f: (x) => x * 0.5, unit: 'deg', tag: 'INFERRED 0.5/count', digits: 1 },
+  '0071': { f: (x) => x * 0.5, unit: 'deg', tag: '0.5/count (JEEP arithmetic, medium-high)', digits: 1 },
+  '0075': { f: (x) => x * 0.5, unit: 'deg', tag: '0.5/count (JEEP arithmetic, medium-high)', digits: 1 },
   '0072': { f: (x) => signed8(x), unit: 'counts', tag: 'signed', digits: 0 },
-  '0089': { f: (x) => x * TICK_MS, unit: 'ms', tag: 'ASSUMED 4 us/tick', digits: 3 },
-  '008B': { f: (x) => x * TICK_MS, unit: 'ms', tag: 'ASSUMED 4 us/tick', digits: 3 },
-  '008D': { f: (x) => x * TICK_MS, unit: 'ms', tag: 'ASSUMED 4 us/tick', digits: 3 },
-  '008F': { f: (x) => x * TICK_MS, unit: 'ms', tag: 'ASSUMED 4 us/tick', digits: 3 },
-  '0091': { f: (x) => x * TICK_MS, unit: 'ms', tag: 'ASSUMED 4 us/tick', digits: 3 },
+  '0089': { f: (x) => x * TICK_MS, unit: 'ms', tag: '4 us/tick', digits: 3 },
+  '008B': { f: (x) => x * TICK_MS, unit: 'ms', tag: '4 us/tick', digits: 3 },
+  '008D': { f: (x) => x * TICK_MS, unit: 'ms', tag: '4 us/tick', digits: 3 },
+  '008F': { f: (x) => x * TICK_MS, unit: 'ms', tag: '4 us/tick', digits: 3 },
+  '0091': { f: (x) => x * TICK_MS, unit: 'ms', tag: '4 us/tick', digits: 3 },
   '0093': { f: (x) => x / 256, unit: 'x', tag: 'INFERRED', digits: 3 },
   '0095': { f: (x) => x / 256, unit: 'x', tag: 'INFERRED', digits: 3 },
   '00BE': { f: (x) => 1 + x / 256, unit: 'x', tag: 'INFERRED (1+x/256)', digits: 3 },
@@ -79,8 +81,8 @@ export const RAM_SCALES = {
   '00A4': { f: (x) => signed8(x), unit: 'signed', tag: 'medium', digits: 0 },
   '00A5': { f: (x) => signed8(x), unit: 'signed', tag: 'medium', digits: 0 },
   '00A6': { f: (x) => signed8(x), unit: 'signed', tag: 'medium', digits: 0 },
-  '001C': { f: (x) => signed8(x), unit: 'signed?', tag: 'unknown', digits: 0 },
-  '0032': { f: (x) => signed8(x), unit: 'signed?', tag: 'unknown', digits: 0 },
+  '001C': { f: (x) => signed8(x) * 4, unit: 'ticks', tag: 'idle PW offset, left bank (SHOWN D2BA)', digits: 0 },
+  '0032': { f: (x) => signed8(x) * 4, unit: 'ticks', tag: 'idle PW offset, right bank (SHOWN D2BA)', digits: 0 },
   '006C': { f: (x) => x * 256 * 11 / 1000, unit: 's (approx)', tag: '256 passes', digits: 0 },
 };
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Headless runner for the Viper PCM machine model.
+// Headless runner for the 68HC11 machine model (bundled image: Viper PCM 04763555).
+//   --image file.bin   run another flash dump (32768 bytes = CPU 8000-FFFF, or 65536); --eeprom file.bin (512 bytes)
+//                      A foreign image runs as plain 68HC11 code: the engine readouts and watch names do not apply.
 //   node run_headless.mjs --scenario idle --rpm 800 --ms 5000
 //   node run_headless.mjs --sci "16 80" --sci "10"
 //   node run_headless.mjs --scenario run --rpm 3000 --map 80 --ms 2000 --events 20
@@ -15,7 +17,9 @@
 //   --events N         print the last N log events (--types inj,spark,... to filter)
 //   --cop              enable the COP watchdog model;  --no-ccd  remove the CCD message (fuel inhibit demo)
 //   --json             machine-readable output
-import { ViperMachine } from './machine/viper_machine.js';
+import { readFileSync } from 'node:fs';
+import { basename } from 'node:path';
+import { ViperMachine, normaliseImage } from './machine/viper_machine.js';
 import { readWatch, DEFAULT_WATCH, keyOnEngineOff, crank, startEngine, keyOff, hex } from './machine/scenarios.js';
 
 const argv = process.argv.slice(2);
@@ -40,6 +44,8 @@ for (let i = 0; i < argv.length; i++) {
     case '--events': opt.events = Number(val()); break;
     case '--types': opt.types = val().split(','); break;
     case '--cop': opt.cop = true; break;
+    case '--image': opt.image = val(); break;
+    case '--eeprom': opt.eeprom = val(); break;
     case '--no-ccd': opt.noCcd = true; break;
     case '--json': opt.json = true; break;
     case '-h': case '--help':
@@ -49,7 +55,11 @@ for (let i = 0; i < argv.length; i++) {
 }
 function readHelp() { return 'see the header of run_headless.mjs for options'; }
 
-const m = new ViperMachine({ cop: !!opt.cop });
+const mopts = { cop: !!opt.cop };
+if (opt.image) { mopts.image = normaliseImage(readFileSync(opt.image)); mopts.imageName = basename(opt.image); }
+if (opt.eeprom) { mopts.eeprom = readFileSync(opt.eeprom); if (mopts.eeprom.length !== 512) { console.error('EEPROM file must be 512 bytes'); process.exit(2); } }
+const m = new ViperMachine(mopts);
+if (m.generic) console.error(`note: ${m.imageInfo.name} is not the 04763555 firmware; engine readouts and watch names do not apply`);
 if (opt.map !== undefined) m.inputs.mapCounts = opt.map;
 if (opt.tps !== undefined) m.inputs.tpsCounts = opt.tps;
 if (opt.coolant !== undefined) m.inputs.coolantC = opt.coolant;

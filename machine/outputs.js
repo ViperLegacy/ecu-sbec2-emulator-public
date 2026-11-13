@@ -1,13 +1,16 @@
 // Output observation: injectors (four driver paths), spark frames, $FC/$FD/$FE(0440) decoding, AIS stepper, tach,
 // side-channel decoding. Names/meanings carry the brief's confidence tags; nothing here names a connector pin.
 
-export const SLOT_TO_CYL = [5, 8, 7, 2, 1, 10, 9, 4, 3, 6];       // INFERRED, medium (brief sec. 5)
+// Slot -> cylinder: high after the 2026-11-13 revisit. Three independent derivations agree: the injector fault table
+// F613, the SCI 13 actuator-test numbering, and the 1995 wiring (the Ignition Control Module drives injectors 1 and
+// 5 = the two side-channel slots 4 and 0). See findings/TIMING_LINK_SYNC_REVISIT.txt.
+export const SLOT_TO_CYL = [5, 8, 7, 2, 1, 10, 9, 4, 3, 6];
 export const SLOT_PATH = [
-  { path: 'side', resource: 'SCI 9-bit side channel (T8=1), 2-byte frame' },
+  { path: 'side', resource: 'SCI 9-bit frame (T8=1) to the Ignition Control Module' },
   { path: 'oc', resource: 'OC2 / PA6' },
   { path: 'spi', resource: 'SPI smart device FE frame' },
   { path: 'asic', resource: 'ext $040E' },
-  { path: 'side', resource: 'SCI 9-bit side channel (T8=1), 2-byte frame' },
+  { path: 'side', resource: 'SCI 9-bit frame (T8=1) to the Ignition Control Module' },
   { path: 'oc', resource: 'OC3 / PA5' },
   { path: 'asic', resource: 'ext $040C' },
   { path: 'oc', resource: 'OC4 / PA4' },
@@ -17,33 +20,33 @@ export const SLOT_PATH = [
 const OC_PIN_SLOT = { 6: 1, 5: 5, 4: 7 };
 
 export const FC_BITS = [
-  { bit: 7, name: 'fanRelay1', label: 'Radiator fan relay (0 = ON, INFERRED, medium)', activeHigh: false },
-  { bit: 6, name: 'mil', label: 'MIL / check-engine lamp (0 = ON, INFERRED, medium)', activeHigh: false },
-  { bit: 5, name: 'ptu', label: 'PTU lamp/solenoid (JEEP name, low)', activeHigh: true },
-  { bit: 4, name: 'fc4', label: '$FC bit4 (ATM 32/14, unknown, low)', activeHigh: true },
-  { bit: 3, name: 'emr', label: 'EMR / maintenance lamp (1 = ON, INFERRED, low)', activeHigh: true },
-  { bit: 2, name: 'fc2', label: '$FC bit2 (unknown)', activeHigh: true },
-  { bit: 1, name: 'fc1', label: '$FC bit1 (unknown)', activeHigh: true },
-  { bit: 0, name: 'fc0', label: '$FC bit0 (unknown)', activeHigh: true },
+  { bit: 7, name: 'fanRelay1', label: 'Low-speed radiator fan relay (0 = ON; on 97 C, off 94 C, on with A/C; high)', activeHigh: false },
+  { bit: 6, name: 'mil', label: 'MIL / check-engine lamp (0 = ON, high)', activeHigh: false },
+  { bit: 5, name: 'skipShiftLamp', label: 'Skip-shift indicator lamp (0 = ON; lamp vs solenoid split of bits 5/4 INFERRED)', activeHigh: false },
+  { bit: 4, name: 'skipShiftSolenoid', label: 'Skip-shift (2-3 lockout) solenoid (0 = ON; 12-18 mph, warm, light load; high)', activeHigh: false },
+  { bit: 3, name: 'emr', label: 'EMR / maintenance lamp (1 = ON, JEEP logic, low; no test, no fault bit)', activeHigh: true },
+  { bit: 2, name: 'fc2', label: '$FC bit2 (unused: no control law)', activeHigh: true },
+  { bit: 1, name: 'fc1', label: '$FC bit1 (unused: no control law)', activeHigh: true },
+  { bit: 0, name: 'fc0', label: '$FC bit0 (unused: no control law)', activeHigh: true },
 ];
 export const FD_BITS = [
-  { bit: 7, name: 'fd7', label: '$FD bit7 (JEEP cruise vent, unused?)', activeHigh: true },
-  { bit: 6, name: 'fd6', label: '$FD bit6 (JEEP cruise vacuum, unused?)', activeHigh: true },
-  { bit: 5, name: 'purge', label: 'EVAP purge solenoid (medium)', activeHigh: true },
-  { bit: 4, name: 'asd', label: 'ASD relay (ATM 0A, medium; polarity unsure)', activeHigh: true },
-  { bit: 3, name: 'diagHighSpeed', label: 'Diag line speed select (1 = 62500, medium)', activeHigh: true },
-  { bit: 2, name: 'speedGated', label: 'Speed-gated output ($84 >= $0A, low)', activeHigh: true },
-  { bit: 1, name: 'fanRelay2', label: 'Second fan relay / fan speed (0 = ON, low-medium)', activeHigh: false },
-  { bit: 0, name: 'acClutch', label: 'A/C clutch relay (0 = ON, medium)', activeHigh: false },
+  { bit: 7, name: 'fd7', label: '$FD bit7 (unused; driven only by actuator test 14)', activeHigh: true },
+  { bit: 6, name: 'fd6', label: '$FD bit6 (unused; driven only by actuator test 14)', activeHigh: true },
+  { bit: 5, name: 'purge', label: 'EVAP purge (1 = purge allowed; held 0 below 60 C; high)', activeHigh: true },
+  { bit: 4, name: 'asd', label: 'ASD relay (0 = ON; ~1 s prime at key-on; high)', activeHigh: false },
+  { bit: 3, name: 'diagHighSpeed', label: 'High-speed diag flag (set by SCI 12; receiver not in the image, low)', activeHigh: true },
+  { bit: 2, name: 'speedGated', label: 'Reverse-lockout solenoid? (0 below 5 mph; law shown, load INFERRED)', activeHigh: true },
+  { bit: 1, name: 'fanRelay2', label: 'High-speed radiator fan relay (0 = ON; on 102 C, off 96 C; high)', activeHigh: false },
+  { bit: 0, name: 'acClutch', label: 'A/C clutch relay (0 = engaged; WOT / 113 C / rpm cut-outs; high)', activeHigh: false },
 ];
 export const LATCH_BITS = [
-  { bit: 7, name: 'an4AltSelect', label: 'AN4 second-measurement switch (medium-low)' },
+  { bit: 7, name: 'an4AltSelect', label: 'Second thermistor switched onto AN4 (two-point reading -> $88, medium)' },
   { bit: 6, name: 'l6', label: 'unchanged after init' },
-  { bit: 5, name: 'airRange', label: 'Air-temp pull-up range (1 = table B800)' },
-  { bit: 4, name: 'coolantRange', label: 'Coolant pull-up range (1 = table B800)' },
-  { bit: 3, name: 'o2DiagOut', label: 'O2-diagnostic output (unknown)' },
+  { bit: 5, name: 'airRange', label: 'Air-temp pull-up range (1 = ~10 k cold range, table B800)' },
+  { bit: 4, name: 'coolantRange', label: 'Coolant pull-up range (1 = ~10 k cold range, table B800)' },
+  { bit: 3, name: 'o2DiagOut', label: 'O2 open-circuit test bias (both banks; codes 20/41, medium)' },
   { bit: 2, name: 'fdSelect', label: '$FD driver select (0 = selected)', activeHigh: false },
-  { bit: 1, name: 'tach', label: 'Tach output, toggles per cylinder edge (INFERRED, medium-low)' },
+  { bit: 1, name: 'tach', label: 'Tach output, toggles per cylinder event (medium-high)' },
   { bit: 0, name: 'spiStrobe', label: 'SPI strobe (AIS / FE frame)' },
 ];
 
@@ -52,6 +55,8 @@ export function decodeBits(v, table) {
   for (const d of table) { const b = !!(v & (1 << d.bit)); o[d.name] = d.activeHigh === false ? !b : b; }
   return o;
 }
+
+const SIDE_TESTS = { 0x81: 'coil 1', 0x82: 'coil 2', 0x83: 'coil 3', 0x84: 'injector #1', 0x85: 'injector #5', 0x86: 'coil 4', 0x87: 'coil 5' };
 
 // Side-channel writer PCs (SCDR stores with T8=1), from the listing.
 const SIDE_PC = {
@@ -163,7 +168,7 @@ export class Outputs {
   /** Side-channel (T8=1) byte; classified by the PC of the SCDR store. */
   sideByte(b, pc, cycle) {
     const m = this.m;
-    const kind = SIDE_PC[pc] || (b === 0x00 ? 'testEnd' : (b >= 0x81 && b <= 0x87) ? 'actuator' : b === 0xFF ? 'clear' : 'unknown');
+    const kind = (!m.generic && SIDE_PC[pc]) || (b === 0x00 ? 'testEnd' : (b >= 0x81 && b <= 0x87) ? 'actuator' : b === 0xFF ? 'clear' : 'unknown');
     const slot = m.ram[0x63];
     const ev = { byte: b, kind, pc };
     if (kind === 'spark') {
@@ -179,7 +184,8 @@ export class Outputs {
       this.injector(p.slot, (p.hi << 8) | b, 'side', SLOT_PATH[p.slot]?.resource || 'side channel', p.cycle, { frame: [p.hi, b] });
       return;
     }
-    if (kind === 'actuator') ev.test = b - 0x80;
+    // module test codes (D82E list): $81-$83 coils 1-3, $84 injector #1, $85 injector #5, $86/$87 coils 4/5
+    if (kind === 'actuator') { ev.test = b - 0x80; ev.target = SIDE_TESTS[b] || null; }
     m.log('sideTx', ev, cycle);
   }
 

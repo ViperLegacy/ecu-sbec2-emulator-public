@@ -70,7 +70,7 @@ export class Asic {
         this.pw[base] = word;
         // reset-time initialisation (94F1-94FD stores D = $0008 into 0408-040E) is not an injector pulse
         const pc = m.cpu.lastOpAddr;
-        if (pc >= 0x94F1 && pc <= 0x94FD) { m.log('asicInit', { reg: base, word }, c); return; }
+        if (!m.generic && pc >= 0x94F1 && pc <= 0x94FD) { m.log('asicInit', { reg: base, word }, c); return; }
         m.outputs.injector(ASIC_INJ_SLOT[base], word, 'asic', `ext $${base.toString(16).toUpperCase().padStart(4, '0')}`, c);
       }
     }

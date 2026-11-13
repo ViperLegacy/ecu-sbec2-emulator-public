@@ -1,8 +1,8 @@
-// Viper SBEC2 PCM emulator GUI: machine lifecycle, time-sliced run loop on the main thread, toolbar, persistence.
+// 68HC11 emulator GUI (SBEC2 board model; bundled image: 1995 Viper PCM 04763555): machine lifecycle, time-sliced run loop on the main thread, toolbar, persistence.
 // The machine (../machine/viper_machine.js) runs in ~10 ms setTimeout chunks with a host-time budget so the
 // page stays responsive at every speed; the scope is drawn on requestAnimationFrame. No connector pin is named anywhere: signals are MCU resources.
 
-import { ViperMachine } from '../machine/viper_machine.js';
+import { ViperMachine, normaliseImage, classifyImage } from '../machine/viper_machine.js';
 import { DATA, IMAGE_SHA256, loadEeprom, loadImage } from '../rom/viper_rom.js';
 import { h, $, setText, download, pickFile, store } from './dom.js';
 import { Probe } from './probe.js';
@@ -21,13 +21,29 @@ import { createWorkspaces } from './workspaces.js';
 const LS_EEPROM = 'viper04763555.eeprom';
 const LS_KEEPALIVE = 'viper04763555.keepalive';
 const LS_UI = 'viper04763555.ui';
+// A flash dump loaded by the user replaces the bundled image until "Bundled image" is chosen. It lives in the
+// browser only (never uploaded). Its EEPROM copy is kept apart from the bundled image's.
+const LS_IMAGE = 'hc11emu.image';
+const LS_IMAGE_NAME = 'hc11emu.image.name';
+const LS_IMAGE_EEPROM = 'hc11emu.image.eeprom';
 const SPEEDS = [['0.1', 0.1], ['1 (real time)', 1], ['10', 10], ['max', Infinity]];
 
 class App {
   constructor(root) {
     this.root = root;
     this.DATA = DATA;
-    this.calibration = new Calibration(DATA, loadImage());
+    let image = loadImage();
+    this.imageName = '04763555 (bundled)';
+    this.customImage = false;
+    const stored = store.getBytes(LS_IMAGE);
+    if (stored && stored.length) {
+      try { image = normaliseImage(stored); this.imageName = store.get(LS_IMAGE_NAME) || 'custom image'; this.customImage = true; }
+      catch { store.del(LS_IMAGE); store.del(LS_IMAGE_NAME); }
+    }
+    this.imageInfo = classifyImage(image);
+    this.generic = this.imageInfo.profile === 'generic';
+    this.lsEeprom = this.customImage ? LS_IMAGE_EEPROM : LS_EEPROM;
+    this.calibration = new Calibration(DATA, image);
     this.speed = 1;
     this.paused = false;
     this.opts = { eClock: 2_000_000, cop: false };
@@ -40,7 +56,7 @@ class App {
     this.errors = [];
     const ui = this._loadUi();
     if (ui.speed !== undefined) this.speed = ui.speed === 'max' ? Infinity : ui.speed;
-    const ee = store.getBytes(LS_EEPROM);
+    const ee = store.getBytes(this.lsEeprom);
     this.eepromSource = ee && ee.length === 512 ? 'browser storage' : 'dump file';
     this.m = this._newMachine({ eeprom: ee && ee.length === 512 ? ee : undefined });
     this._buildUi();
@@ -54,9 +70,9 @@ class App {
   _saveUi(patch) { const u = { ...this._loadUi(), ...patch }; store.set(LS_UI, JSON.stringify(u)); }
 
   _newMachine(extra = {}) {
-    const m = new ViperMachine({ eClock: this.opts.eClock, cop: this.opts.cop, image: this.calibration.image, logSize: 20000, ...extra });
+    const m = new ViperMachine({ eClock: this.opts.eClock, cop: this.opts.cop, image: this.calibration.image, imageName: this.imageName, logSize: 20000, ...extra });
     this.probe = new Probe(m);
-    m.onEepromWrite(() => { if (store.setBytes(LS_EEPROM, m.getEeprom())) this.eepromSource = 'browser storage (auto-saved)'; });
+    m.onEepromWrite(() => { if (store.setBytes(this.lsEeprom, m.getEeprom())) this.eepromSource = 'browser storage (auto-saved)'; });
     m.on('fault', (e) => this.flash(`machine fault: ${e.kind}`, 'bad'));
     return m;
   }
@@ -183,10 +199,14 @@ class App {
     this.toast = h('div.toast');
 
     const persist = h('div.menu',
+      h('button', { title: 'Run another 68HC11 flash dump: 32768 bytes (CPU 8000-FFFF) or 65536 (0000-FFFF). Stays in this browser; the page reloads.', on: { click: () => this.loadImageFile() } }, 'Flash dump ↑ file'),
+      h('button', { title: 'Go back to the bundled 04763555 image', disabled: !this.customImage, on: { click: () => this.useBundledImage() } }, 'Bundled image'),
+      h('button', { title: 'Save the image the CPU is executing (tuning edits included)', on: { click: () => download(this.customImage ? 'flash_8000-FFFF.bin' : 'VIPER_04763555_8000-FFFF.bin', this.m.rom) } }, 'Flash ↓ file'),
+      h('span.sep'),
       h('button', { on: { click: () => this.saveEepromFile() } }, 'EEPROM ↓ file'),
       h('button', { on: { click: () => this.loadEepromFile() } }, 'EEPROM ↑ file'),
-      h('button', { on: { click: () => { store.setBytes(LS_EEPROM, this.m.getEeprom()); this.eepromSource = 'browser storage'; this.flash('EEPROM stored in browser'); } } }, 'EEPROM → browser'),
-      h('button', { title: 'Reload the EEPROM from the dump (B600-B7FF) and forget the browser copy', on: { click: () => { store.del(LS_EEPROM); this.m.loadEeprom(loadEeprom()); this.eepromSource = 'dump file'; this.flash('EEPROM = dump file'); } } }, 'EEPROM = dump'),
+      h('button', { on: { click: () => { store.setBytes(this.lsEeprom, this.m.getEeprom()); this.eepromSource = 'browser storage'; this.flash('EEPROM stored in browser'); } } }, 'EEPROM → browser'),
+      h('button', { title: 'Reload the EEPROM from the dump (B600-B7FF) and forget the browser copy', on: { click: () => { store.del(this.lsEeprom); this.m.loadEeprom(this.customImage ? this.calibration.image.slice(0x3600, 0x3800) : loadEeprom()); this.eepromSource = 'dump file'; this.flash('EEPROM = dump file'); } } }, 'EEPROM = dump'),
       h('span.sep'),
       h('button', { on: { click: () => this.saveKeepAliveFile() } }, 'Keep-alive ↓ file'),
       h('button', { on: { click: () => this.loadKeepAliveFile() } }, 'Keep-alive ↑ file'),
@@ -198,7 +218,7 @@ class App {
       } } }, 'Keep-alive ← browser'));
 
     const bar = h('header.toolbar',
-      h('div.brand', h('b', 'Viper PCM Emulator'), h('span.sub', ' SBEC2 · 04763555 · 68HC11')),
+      h('div.brand', h('b', '68HC11 Emulator'), h('span.sub', { title: this.imageName }, ` SBEC2 · ${this.generic ? this.imageName : '04763555' + (this.imageInfo.stock ? '' : ' (' + this.imageName + ')')}`)),
       scenSel,
       h('div.grp', h('span.lbl', 'speed'), speedBtns, this.btnPause,
         h('button', { title: 'Execute one instruction (pauses)', on: { click: () => { this.togglePause(true); this.step('insn'); } } }, 'Step'),
@@ -217,6 +237,12 @@ class App {
     const outputs = createOutputsPanel(this);
     this.panels = [outputs];
     const entries = [['scope', 'Scope', outputs.scope]];
+    // A foreign image runs as plain 68HC11 code: the tuning tables are 04763555 addresses and must not be written
+    const notice = this.generic ? h('div.image-notice', { role: 'status' },
+      h('b', `Custom image: ${this.imageName}. `),
+      'It runs as 68HC11 code on the SBEC2 board model (CPU, timer, SCI, SPI, ADC, EEPROM, I/O at 0400). ',
+      'RAM names, engine readouts, maps, fault names, SCI decoding, scenarios and the pass counter are those of the 04763555 firmware and do not apply to it. ',
+      'The CPU & log, SCI console (raw bytes) and raw RAM views do.') : null;
     for (const [id, label, makePanel] of [
       ['inputs', 'Inputs', createInputsPanel],
       ['outputs', 'Outputs', () => outputs],
@@ -226,6 +252,7 @@ class App {
       ['tuning', 'Tuning', createTuningPanel],
       ['log', 'CPU & log', createLogPanel],
     ]) {
+      if (id === 'tuning' && this.generic) continue;
       const panel = makePanel(this);
       if (panel !== outputs) this.panels.push(panel);
       entries.push([id, label, panel.el]);
@@ -239,8 +266,9 @@ class App {
       },
     });
     const note = h('span.build-info', { title: `Stock image SHA-256 ${IMAGE_SHA256}. Connector pinout unknown. Default E clock 2 MHz (assumed).` },
-      '04763555 · Emulator');
-    this.root.append(bar, telemetry, this.workspaces.el, h('footer.workspace-status', note, this.statusEl), this.toast);
+      this.generic ? `${this.imageName} · 68HC11 Emulator` : '04763555 · 68HC11 Emulator');
+    note.title = `Image: ${this.imageName}${this.imageInfo.stock ? '' : this.generic ? ' (other firmware)' : ' (04763555 code, different calibration or EEPROM)'}. Bundled image SHA-256 ${IMAGE_SHA256}. E clock 2 MHz.`;
+    this.root.append(bar, ...(notice ? [notice] : []), telemetry, this.workspaces.el, h('footer.workspace-status', note, this.statusEl), this.toast);
     for (const p of this.panels) p.attach && p.attach(this.m);
     this.refreshStatus();
     this._syncRunButtons();
@@ -264,11 +292,16 @@ class App {
     const m = this.m, w = this.perfWin;
     const engine = m.engine();
     const pulseWidth = ticks => (ticks * m.tickUs() / 1000).toFixed(2);
-    setText(this.telemetry.rpm, `${Math.round(engine.rpm).toLocaleString('en-US')} rpm`);
-    setText(this.telemetry.pw, `${pulseWidth(engine.pwEven)} / ${pulseWidth(engine.pwOdd)} ms`);
-    setText(this.telemetry.spark, `${(engine.spark75 / 2).toFixed(1)}° BTDC`);
-    setText(this.telemetry.sync, engine.synced ? 'Synced' : 'Waiting');
-    this.telemetry.sync.classList.toggle('ok', engine.synced);
+    if (this.generic) {       // these RAM addresses mean something only in the 04763555 firmware
+      for (const k of ['rpm', 'pw', 'spark']) setText(this.telemetry[k], 'n/a');
+      setText(this.telemetry.sync, 'PC $' + m.cpu.pc.toString(16).toUpperCase().padStart(4, '0'));
+    } else {
+      setText(this.telemetry.rpm, `${Math.round(engine.rpm).toLocaleString('en-US')} rpm`);
+      setText(this.telemetry.pw, `${pulseWidth(engine.pwEven)} / ${pulseWidth(engine.pwOdd)} ms`);
+      setText(this.telemetry.spark, `${(engine.spark75 / 2).toFixed(1)}° BTDC`);
+      setText(this.telemetry.sync, engine.synced ? 'Synced' : 'Waiting');
+      this.telemetry.sync.classList.toggle('ok', engine.synced);
+    }
     const sp = this.paused ? 'paused' : (this.speed === Infinity ? 'max' : 'x' + this.speed);
     const seq = this.seq.status();
     const kc = this.keyCycle ? ` key-cycle (ON in ${((this.keyCycle.onAt - m.ms) / 1000).toFixed(1)} s)` : '';
@@ -276,12 +309,26 @@ class App {
   }
 
   // ---------------------------------------------------------------------------------------------------
-  saveEepromFile() { download('VIPER_04763555_eeprom_B600-B7FF.bin', this.m.getEeprom()); }
+  saveEepromFile() { download(this.customImage ? 'eeprom_B600-B7FF.bin' : 'VIPER_04763555_eeprom_B600-B7FF.bin', this.m.getEeprom()); }
+  /** Load another flash dump. Stored in the browser, then the page reloads so every panel starts from it. */
+  async loadImageFile() {
+    try {
+      const raw = await pickFile('.bin,.rom,.BIN');
+      const image = normaliseImage(raw);
+      const info = classifyImage(image);
+      if (!store.setBytes(LS_IMAGE, image)) return this.flash('cannot store the image in this browser (storage blocked or full)', 'bad');
+      store.set(LS_IMAGE_NAME, String(raw.fileName || 'custom image').slice(0, 80));
+      store.del(LS_IMAGE_EEPROM);
+      this.flash(info.stock ? 'that is the bundled image' : info.sameCode ? '04763555 code with a different calibration: reloading' : 'other firmware: reloading as plain 68HC11 code');
+      setTimeout(() => window.location.reload(), 600);
+    } catch (e) { if (e.message !== 'no file') this.flash(e.message, 'bad'); }
+  }
+  useBundledImage() { store.del(LS_IMAGE); store.del(LS_IMAGE_NAME); store.del(LS_IMAGE_EEPROM); window.location.reload(); }
   async loadEepromFile() {
     try {
       const b = await pickFile('.bin');
       if (b.length !== 512) return this.flash(`EEPROM file must be 512 bytes (got ${b.length})`, 'bad');
-      this.m.loadEeprom(b); store.setBytes(LS_EEPROM, b); this.eepromSource = 'file (also stored in browser)';
+      this.m.loadEeprom(b); store.setBytes(this.lsEeprom, b); this.eepromSource = 'file (also stored in browser)';
       this.flash('EEPROM loaded (takes effect immediately; reset to re-read it at init)');
     } catch (e) { if (e.message !== 'no file') this.flash(e.message, 'bad'); }
   }
@@ -298,6 +345,7 @@ class App {
 
 export function start(root) {
   const app = new App(root);
+  window.hc11App = app;                       // debugging handle: hc11App.m is the machine
   window.viperApp = app;                      // debugging handle: viperApp.m is the machine
   return app;
 }

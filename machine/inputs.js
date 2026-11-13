@@ -34,28 +34,29 @@ export function an4AltRatio(A, B) {
 }
 
 export const INPUT_INFO = {
-  map:      { resource: 'AN0 (ADR1 of ADCTL=$10)', fn: 'MAP sensor', ram: '$76/$C6', confidence: 'channel high; kPa scale unknown', units: 'counts' },
-  battery:  { resource: 'AN1 (ADR2 of ADCTL=$10)', fn: 'battery voltage', ram: '$80', confidence: 'medium-high; V = counts/16 INFERRED', units: 'V' },
-  o2_1:     { resource: 'AN2 (ADR3 of ADCTL=$10)', fn: 'O2 sensor 1 (INFERRED odd-cylinder bank)', ram: '$79', confidence: 'high', units: 'V' },
+  map:      { resource: 'AN0 (ADR1 of ADCTL=$10)', fn: 'MAP sensor', ram: '$76/$C6', confidence: 'channel high; kPa ~ 8 + 0.38 x counts (EXTERNAL 1992 manual sensor table, medium)', units: 'counts' },
+  battery:  { resource: 'AN1 (ADR2 of ADCTL=$10)', fn: 'battery voltage', ram: '$80', confidence: 'channel high; V = counts/16 (16.0-16.2 counts/V, medium-high)', units: 'V' },
+  o2_1:     { resource: 'AN2 (ADR3 of ADCTL=$10)', fn: 'O2 sensor, left bank (odd cylinders); rich >= 0.47 V', ram: '$79', confidence: 'high', units: 'V' },
   tps:      { resource: 'AN3 (ADR4 of ADCTL=$10)', fn: 'throttle position', ram: '$7F/$77', confidence: 'high', units: 'counts' },
-  coolant:  { resource: 'AN4 (ADR1 of ADCTL=$14), range by $0440.4', fn: 'coolant temperature', ram: '$7E/$7B', confidence: 'channel medium-high, degC = x-128 INFERRED', units: 'degC' },
-  an4alt:   { resource: 'AN4 while $0440.7 = 1', fn: 'second AN4 measurement (ratio -> BCCA -> $88)', ram: '$014B/$88', confidence: 'low', units: 'degC' },
-  air:      { resource: 'AN5 (ADR2 of ADCTL=$14), range by $0440.5', fn: 'intake air temperature', ram: '$7D/$78', confidence: 'medium-high', units: 'degC' },
+  coolant:  { resource: 'AN4 (ADR1 of ADCTL=$14), range by $0440.4', fn: 'coolant temperature', ram: '$7E/$7B', confidence: 'high; degC = x-128 matches the 1992 manual thermistor curve within 3 C', units: 'degC' },
+  an4alt:   { resource: 'AN4 while $0440.7 = 1', fn: 'second thermistor switched in parallel by $0440.7 (-> BCCA -> $88, sent on CCD only)', ram: '$014B/$88', confidence: 'medium (which sensor: unknown)', units: 'degC' },
+  air:      { resource: 'AN5 (ADR2 of ADCTL=$14), range by $0440.5', fn: 'intake air temperature', ram: '$7D/$78', confidence: 'channel high; real sensor curve unverified (firmware uses the coolant tables)', units: 'degC' },
   an6:      { resource: 'AN6 (ADR3 of ADCTL=$14)', fn: 'never read by the firmware', ram: '-', confidence: 'high', units: 'counts' },
-  o2_2:     { resource: 'AN7 (ADR4 of ADCTL=$14)', fn: 'O2 sensor 2 (INFERRED even-cylinder bank)', ram: '$7A', confidence: 'medium-high', units: 'V' },
+  o2_2:     { resource: 'AN7 (ADR4 of ADCTL=$14)', fn: 'O2 sensor, right bank (even cylinders)', ram: '$7A', confidence: 'high', units: 'V' },
   key:      { resource: '$0400 read bit6 (0 = key ON)', fn: 'ignition sense', confidence: 'medium-high' },
-  relayFeed:{ resource: '$0400 read bit4 (1 = powered)', fn: 'ASD / relay feed sense (code 2C)', confidence: 'medium' },
+  relayFeed:{ resource: '$0400 read bit4 (1 = powered)', fn: 'ASD relay output sense (code 2C when low with the engine turning)', confidence: 'high' },
   spiBusy:  { resource: '$0400 read bit3 (0 = ready)', fn: 'SPI smart-device handshake', confidence: 'high' },
   in0400b5: { resource: '$0400 read bit5', fn: 'unknown, only reported by SCI 1A 04', confidence: 'low' },
-  in0400b7: { resource: '$0400 read bit7', fn: 'unknown, must be 0 for the injector test', confidence: 'low' },
+  in0400b7: { resource: '$0400 read bit7', fn: 'unknown (injector output state?), must be 0 for the injector test', confidence: 'low' },
   in0401hi: { resource: '$0401 read bits 7-4', fn: 'unknown (INFERRED ASIC injector channel status), 0 = OK', confidence: 'low' },
   injectorStatusOk: { resource: '$0405 read bit2 (1 = OK)', fn: 'injector driver status latch (table F613 DTCs)', confidence: 'medium-low' },
-  smartReply: { resource: 'SPI MISO during the 61/62 frame -> $048B-$048E', fn: '$048C b7/b6 -> $85 switch inputs; $048E b2/b4/b7 -> codes 19/22/5C', confidence: 'medium (frame), low (meaning)' },
+  smartReply: { resource: 'SPI MISO during the 61/62 frame -> $048B-$048E', fn: '$048C -> $85 switch byte (b7: A/C request, 0 = requested); $048E driver faults b2/b4/b7 -> codes 19 (AIS) / 22 (skip-shift) / 5C (fan)', confidence: 'high (mapping), medium-high (A/C bit), low (other switch bits)' },
   ccdRxMessage: { resource: 'SPI MISO during the 93/80 CCD frame -> $048A-$048C', fn: 'received CCD message; ID low nibble 1 unlocks fuel ($F5.6/$F5.7)', confidence: 'low (meaning), high (code path)' },
+  o2Mode:   { resource: 'AN2 / AN7 model', fn: 'switching = follows the firmware fuel trim per bank (GUESS plant); fixed = slider value', confidence: 'model only' },
   fdFeedbackMode: { resource: 'SPI MISO while $FD is shifted ($0440.2 low) -> $015C', fn: 'output-driver feedback (codes 0A/10/12/5D)', confidence: 'low' },
-  vss:      { resource: 'TIC2 / PA1 falling edge', fn: 'vehicle speed sensor', confidence: 'high (channel); 8000 pulses/mile INFERRED' },
+  vss:      { resource: 'TIC2 / PA1 falling edge', fn: 'vehicle speed sensor', confidence: 'high; 8000 pulses/mile from the firmware constant 115,200,000 (A4E7); the signal reaches the PCM through the ICM' },
   crank:    { resource: 'TIC1 / PA2 rising edge', fn: 'crank position (20 edges / 720 deg)', confidence: 'high' },
-  cam:      { resource: 'IRQ pin falling edge (OPTION.IRQE=1)', fn: 'cam / sync', confidence: 'medium' },
+  cam:      { resource: 'IRQ pin falling edge (OPTION.IRQE=1)', fn: 'cam / sync (1995 sprocket: single, double, single slot)', confidence: 'high (role and pulse counts); polarity and phase unmeasured' },
 };
 
 const clamp8 = (v) => Math.max(0, Math.min(255, Math.round(v)));
@@ -73,6 +74,15 @@ export class Inputs {
     this.an4AltC = 20;           // AN4-alt via inverse BCCA ratio
     this.an6Counts = 0;          // AN6 (unused)
     this.o2_2V = 0.2;            // AN7
+    // O2 model. 'switching' (default): each sensor reads rich or lean from the firmware's own fuel trim for its bank
+    // (short-term $A5/$A6 + adaptive $A3/$A4 against o2BiasCounts), after o2DelayMs, so closed loop limit-cycles as on
+    // an engine. This is a GUESS plant, not the car: it only closes the loop the firmware expects. 'fixed': the
+    // sensors hold o2_1V / o2_2V (a held value makes the trims saturate and the no-switch watchdog fire, codes 03/04).
+    this.o2Mode = 'switching';
+    this.o2BiasCounts = 0;       // trim (1/256 fuel) at which the mixture is stoichiometric; + = engine lean at neutral
+    this.o2DelayMs = 150;        // transport + sensor delay
+    this.o2RichV = 0.8; this.o2LeanV = 0.1;
+    this._o2 = [{ want: false, level: false, t: 0 }, { want: false, level: false, t: 0 }];
     this.raw = new Array(8).fill(null);   // raw-count overrides per channel (null = use the engineering value)
     this.an4AltRaw = null;       // raw override of the AN4-alt reading
     // discrete
@@ -83,7 +93,9 @@ export class Inputs {
     this.in0401hi = 0; this.in0401low = 0;
     this.injectorStatusOk = true;          // $0405.2
     this.injectorStatusMode = 'level';     // 'level' | 'latched' (latched: sampled when $04 is written to $0405)
-    this.smartReply = [0, 0, 0, 0];        // bytes clocked into $048B..$048E
+    // bytes clocked into $048B..$048E. $048C bit7 = 0 means A/C requested (9F41): default to not requested, or the
+    // clutch engages and the low fan runs after every start
+    this.smartReply = [0, 0x80, 0, 0];
     this.smartChecksumOk = true;
     // CCD message the smart device hands back during the E9F6 frame (3 bytes + sum). The firmware needs one with
     // ID low nibble = 1 (EAC1-EACA -> $F5.6), or ~2 s after key-on it sets $F5.5 and every running pulse width is 0
@@ -153,14 +165,26 @@ export class Inputs {
     switch (ch) {
       case 0: return clamp8(this.mapCounts);
       case 1: return clamp8(this.batteryV * 16);
-      case 2: return clamp8(this.o2_1V * 255 / 5);
+      case 2: return clamp8(this._o2Volts(0, this.o2_1V) * 255 / 5);
       case 3: return clamp8(this.tpsCounts);
       case 4: return this.coolantCounts();
       case 5: return this.airCounts();
       case 6: return clamp8(this.an6Counts);
-      case 7: return clamp8(this.o2_2V * 255 / 5);
+      case 7: return clamp8(this._o2Volts(1, this.o2_2V) * 255 / 5);
     }
     return 0;  // AN8+ (not bonded)
+  }
+
+  /** Sensor voltage for bank 0 (AN2, left) / 1 (AN7, right). */
+  _o2Volts(bank, fixedV) {
+    if (this.o2Mode !== 'switching') return fixedV;
+    const m = this.m, ram = m.ram, s8 = (v) => (v & 0x80 ? v - 256 : v);
+    const trim = s8(ram[0xA5 + bank]) + s8(ram[0xA3 + bank]);
+    const st = this._o2[bank], now = m.cpu.cycles;
+    const want = trim > this.o2BiasCounts;
+    if (want !== st.want) { st.want = want; st.t = now; }
+    if (st.level !== st.want && now - st.t >= this.o2DelayMs * m.eClock / 1000) st.level = st.want;
+    return st.level ? this.o2RichV : this.o2LeanV;
   }
 
   snapshot() {
