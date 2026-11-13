@@ -1,5 +1,5 @@
 > Live: https://sbec2-emulator.viperecu.com/  
-> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, d083898 + uncommitted changes) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
+> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, a073a02) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
 
 # Viper 04763555 PCM emulator
 
