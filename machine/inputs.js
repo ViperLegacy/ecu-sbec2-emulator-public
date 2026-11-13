@@ -44,8 +44,12 @@ export const INPUT_INFO = {
   an6:      { resource: 'AN6 (ADR3 of ADCTL=$14)', fn: 'never read by the firmware', ram: '-', confidence: 'high', units: 'counts' },
   o2_2:     { resource: 'AN7 (ADR4 of ADCTL=$14)', fn: 'O2 sensor, right bank (even cylinders)', ram: '$7A', confidence: 'high', units: 'V' },
   key:      { resource: '$0400 read bit6 (0 = key ON)', fn: 'ignition sense', confidence: 'medium-high' },
-  relayFeed:{ resource: '$0400 read bit4 (1 = powered)', fn: 'ASD relay output sense (code 2C when low with the engine turning)', confidence: 'high' },
-  spiBusy:  { resource: '$0400 read bit3 (0 = ready)', fn: 'SPI smart-device handshake', confidence: 'high' },
+  relayFeed:{ resource: '$0400 read bit4 (1 = powered)', fn: 'ASD relay output sense: follows the ASD command $FD.4 after a pull-in delay (the firmware waits up to 10 ms for it at 9ABC). Unticked = feed missing (code 2C with the engine turning)', confidence: 'high (code path); pull-in time GUESS' },
+  spiBusy:  { resource: '$0400 read bit3 (0 = ready)', fn: 'SPI smart-device handshake stuck busy (first byte of every frame times out, code 44)', confidence: 'high' },
+  spiBusyUs: { resource: '$0400 read bit3 after each $0402.3 strobe', fn: 'per-byte busy time of the smart device; the firmware polls up to $40 / $0B times (about 6 us each)', confidence: 'code path high; real time unknown (GUESS 20 us)' },
+  spiStallAfter: { resource: '$0400 read bit3', fn: 'fault: the smart device stays busy after byte N of a frame (mid-frame time-out)', confidence: 'model only' },
+  o2Open:   { resource: 'AN2 / AN7 with test bias $0440.3', fn: 'O2 sensor open circuit: reads inside $14..$22 with the bias off and >= $4D with $0440.3 = 1 (codes 41 left / 20 right after about 3.5 min warm)', confidence: 'thresholds high (image); electrical behaviour inferred from them' },
+  xirq:     { resource: 'XIRQ pin', fn: 'non-maskable interrupt; the firmware unmasks X at 9481 and restarts through 9400. What drives the pin is unknown', confidence: 'low' },
   in0400b5: { resource: '$0400 read bit5', fn: 'unknown, only reported by SCI 1A 04', confidence: 'low' },
   in0400b7: { resource: '$0400 read bit7', fn: 'unknown (injector output state?), must be 0 for the injector test', confidence: 'low' },
   in0401hi: { resource: '$0401 read bits 7-4', fn: 'unknown (INFERRED ASIC injector channel status), 0 = OK', confidence: 'low' },
@@ -53,7 +57,7 @@ export const INPUT_INFO = {
   smartReply: { resource: 'SPI MISO during the 61/62 frame -> $048B-$048E', fn: '$048C -> $85 switch byte (b7: A/C request, 0 = requested); $048E driver faults b2/b4/b7 -> codes 19 (AIS) / 22 (skip-shift) / 5C (fan)', confidence: 'high (mapping), medium-high (A/C bit), low (other switch bits)' },
   ccdRxMessage: { resource: 'SPI MISO during the 93/80 CCD frame -> $048A-$048C', fn: 'received CCD message; ID low nibble 1 unlocks fuel ($F5.6/$F5.7)', confidence: 'low (meaning), high (code path)' },
   o2Mode:   { resource: 'AN2 / AN7 model', fn: 'switching = follows the firmware fuel trim per bank (GUESS plant); fixed = slider value', confidence: 'model only' },
-  fdFeedbackMode: { resource: 'SPI MISO while $FD is shifted ($0440.2 low) -> $015C', fn: 'output-driver feedback (codes 0A/10/12/5D)', confidence: 'low' },
+  fdFeedbackMode: { resource: 'SPI MISO while $FD is shifted ($0440.2 low) -> $015C', fn: 'output-driver feedback (codes 0A/10/12/5D). XOR mask = one stuck output: bit0 code 10 (A/C clutch), bit1 5D (high fan), bit4 0A (ASD), bit5 12 (purge)', confidence: 'low' },
   vss:      { resource: 'TIC2 / PA1 falling edge', fn: 'vehicle speed sensor', confidence: 'high; 8000 pulses/mile from the firmware constant 115,200,000 (A4E7); the signal reaches the PCM through the ICM' },
   crank:    { resource: 'TIC1 / PA2 rising edge', fn: 'crank position (20 edges / 720 deg)', confidence: 'high' },
   cam:      { resource: 'IRQ pin falling edge (OPTION.IRQE=1)', fn: 'cam / sync (1995 sprocket: single, double, single slot)', confidence: 'high (role and pulse counts); polarity and phase unmeasured' },
@@ -87,8 +91,18 @@ export class Inputs {
     this.an4AltRaw = null;       // raw override of the AN4-alt reading
     // discrete
     this.key = true;             // $0400.6 = 0 when ON
-    this.relayFeed = true;       // $0400.4
-    this.spiBusy = false;        // $0400.3
+    this.relayFeed = true;       // $0400.4 healthy. false = the feed never comes up
+    // 'follow' (default): $0400.4 is 1 only while the ASD relay is commanded ($FD.4 = 0), asdPullInMs after the
+    // command (GUESS). 'level': the old static level (always 1 while relayFeed is true).
+    this.relayFeedMode = 'follow';
+    this.asdPullInMs = 3;
+    this.spiBusy = false;        // $0400.3 stuck busy
+    this.spiBusyUs = 20;         // busy after each strobed byte (GUESS; under the 11-poll limit of about 66 us)
+    this.spiStallAfter = null;   // fault: stay busy after the Nth strobed byte of a frame (1 = after the first)
+    this.o2Open = [false, false];            // open-circuit sensor per bank (0 = AN2 left, 1 = AN7 right)
+    this.o2OpenCounts = 0x1B;                // open, bias off: inside the firmware window $14..$22
+    this.o2OpenBiasedCounts = 0x60;          // open, $0440.3 = 1: above the pass limit $4D
+    this.xirq = false;                       // XIRQ pin asserted (see ViperMachine.pulseXirq)
     this.in0400b5 = false; this.in0400b7 = false; this.in0400low = 0;
     this.in0401hi = 0; this.in0401low = 0;
     this.injectorStatusOk = true;          // $0405.2
@@ -103,6 +117,7 @@ export class Inputs {
     this.ccdRxMessage = [0x21, 0x00, 0x00];
     this.fdFeedbackMode = 'shift';         // 'shift' (previous byte, default) | 'echo' | 'value'
     this.fdFeedbackValue = 0;
+    this.fdFeedbackXor = 0;                // 'shift' mode: bits that read back inverted (a stuck output)
     this.batteryConnected = true;          // keep-alive RAM 0000-0043 kept over a power cycle
     this._cache = new Map();
   }
@@ -162,6 +177,7 @@ export class Inputs {
     if (ch === 4 && (this.m.asic.latch & 0x80)) return this.an4AltCounts();
     const r = this.raw[ch];
     if (r !== null) return r;
+    if ((ch === 2 && this.o2Open[0]) || (ch === 7 && this.o2Open[1])) return clamp8((this.m.asic.latch & 0x08) ? this.o2OpenBiasedCounts : this.o2OpenCounts);
     switch (ch) {
       case 0: return clamp8(this.mapCounts);
       case 1: return clamp8(this.batteryV * 16);

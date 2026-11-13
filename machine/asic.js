@@ -15,16 +15,18 @@ export class Asic {
     this.injLatch = true;    // $0405 bit2 latch (1 = OK)
   }
 
-  read0400() {
-    const i = this.m.inputs;
+  read0400(c = this.m.cpu.cycles) {
+    const m = this.m, i = m.inputs;
+    const feed = i.relayFeed && (i.relayFeedMode !== 'follow' || m.outputs.asdFeed(c));
+    const busy = i.spiBusy || m.spi.handshakeBusy(c);
     return (i.in0400b7 ? 0x80 : 0) | (i.key ? 0 : 0x40) | (i.in0400b5 ? 0x20 : 0) |
-      (i.relayFeed ? 0x10 : 0) | (i.spiBusy ? 0x08 : 0) | (i.in0400low & 0x07);
+      (feed ? 0x10 : 0) | (busy ? 0x08 : 0) | (i.in0400low & 0x07);
   }
 
   read(a, c) {
     if (a >= 0x0480) return this.extRam[a - 0x0480];
     switch (a) {
-      case 0x0400: return this.read0400();
+      case 0x0400: return this.read0400(c);
       case 0x0401: return ((this.m.inputs.in0401hi & 0x0F) << 4) | (this.m.inputs.in0401low & 0x0F);
       case 0x0402: case 0x0403: case 0x0404: case 0x0406: return this.ctrl[a - 0x0400];
       case 0x0405: {

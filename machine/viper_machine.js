@@ -106,7 +106,14 @@ export class ViperMachine {
     this.outputs = new Outputs(this);
     this.cop = { next: Infinity, armed: false, last: 0, maxGap: 0, service: (at) => this._copTimeout(at) };
     this.stimulus = new Stimulus(this);
-    this.sources = [this.timer, this.sci, this.stimulus, this.cop];
+    // External flash programming (JEDEC AA->D555, 55->AAAA, A0->D555, then the data store), as the firmware's
+    // RAM routine at 0490 does it. While the write is in progress the cell reads back with bit 7 inverted
+    // (DATA polling); flashWriteMs is a GUESS (the part type is not in the image). flashPage > 1 models a
+    // page-write part: the other bytes of the page are erased to FF by a one-byte load.
+    this.flash = { state: 0, next: Infinity, addr: -1, value: 0, writes: 0, service: (at) => this._flashDone(at) };
+    this.flashWriteMs = opts.flashWriteMs ?? 5;
+    this.flashPage = opts.flashPage ?? 1;
+    this.sources = [this.timer, this.sci, this.stimulus, this.cop, this.flash];
     this.nextEvent = Infinity;
     this.irqPin = true; this.irqLatch = false;
     this.portd = 0; this.ddrd = 0;
@@ -122,7 +129,7 @@ export class ViperMachine {
       read8: (a, c) => ((a < 0x200 || a >= 0x8000) ? self.mem[a] : self._readSlow(a, c)),
       write8: (a, v, c) => self._write(a, v, c),
       getPendingVector: () => self._pending(),
-      xirqAsserted: () => false,
+      xirqAsserted: () => self.inputs.xirq,
       onInterrupt: (v) => self._onInterrupt(v),
       onIllegal: (addr, bytes) => self.fault('illegal-opcode', { addr, bytes }),
     });
@@ -308,13 +315,43 @@ export class ViperMachine {
     if (a < 0x200) { this.mem[a] = v; if (a === 0x6D && !this.generic) this._onPass(c); return; }
     if (a >= 0x8000) {
       if (a >= 0xB600 && a < 0xB800) this.eeprom.write(a - 0xB600, v, c);
-      else this.romWrites++;                   // flash is read-only (JEDEC program sequence ignored)
+      else this._flashWrite(a, v, c);
       return;
     }
     if (a >= 0x1000 && a < 0x1040) return this._writeReg(a & 0x3F, v, c);
     if (a >= 0x0400 && a < 0x0500) return this.asic.write(a, v, c);
     // unmapped: ignored
   }
+  _flashWrite(a, v, c) {
+    const f = this.flash;
+    if (f.state === 3) {                       // the data store after the unlock sequence
+      f.state = 0;
+      if (f.next !== Infinity) this._flashDone(f.next);
+      if (this.flashPage > 1) {
+        const base = a - ((a - 0x8000) % this.flashPage);
+        for (let i = 0; i < this.flashPage; i++) { const x = base + i; if (x !== a && !(x >= 0xB600 && x < 0xB800)) { this.mem[x] = 0xFF; this.rom[x - 0x8000] = 0xFF; } }
+      }
+      f.addr = a; f.value = v; f.writes++;
+      this.mem[a] = v ^ 0x80;                  // DATA polling: complement of bit 7 until the write completes
+      f.next = c + this.msToCycles(this.flashWriteMs);
+      this.log('flash', { addr: a, value: v, old: this.rom[a - 0x8000] }, c);
+      this.reschedule();
+      return;
+    }
+    const k = a & 0x7FFF;                      // the 32 K part sees A14..A0
+    if (f.state === 0 && k === 0x5555 && v === 0xAA) f.state = 1;
+    else if (f.state === 1 && k === 0x2AAA && v === 0x55) f.state = 2;
+    else if (f.state === 2 && k === 0x5555 && v === 0xA0) f.state = 3;
+    else { f.state = 0; this.romWrites++; }    // a plain store to the flash does nothing
+  }
+  _flashDone(at) {
+    const f = this.flash;
+    f.next = Infinity;
+    if (f.addr >= 0) { this.mem[f.addr] = f.value; this.rom[f.addr - 0x8000] = f.value; f.addr = -1; }
+  }
+  /** Assert XIRQ until the CPU takes it (the firmware restarts through the handler at 9400). */
+  pulseXirq() { this.inputs.xirq = true; }
+
   /** Side-effect-free read for GUIs/watches (registers return their stored value). */
   peek(a) {
     a &= 0xFFFF;
@@ -427,6 +464,7 @@ export class ViperMachine {
   }
   _onInterrupt(v) {
     if (v === VEC.IRQ) this.irqLatch = false;
+    if (v === VEC.XIRQ) this.inputs.xirq = false;
     const handler = (this.mem[v] << 8) | this.mem[v + 1];
     if (!this.generic && handler === SPURIOUS_HANDLER) {
       const c = this.cpu.cycles, s = this._spur;
@@ -505,7 +543,7 @@ export class ViperMachine {
   /** Queue scan-tool bytes (R8=0). The next byte goes out only after the PCM echoed the previous one (or 100 ms). */
   sciSend(bytes) { this.sci.testerSend(Array.isArray(bytes) ? bytes : [bytes], this.cpu.cycles); }
   /** Inject side-channel status bytes (R8=1 frames) as the unknown 9-bit device would send them. */
-  sideChannelSend(bytes) { this.sci.sideSend(Array.isArray(bytes) ? bytes : [bytes], this.cpu.cycles); }
+  sideChannelSend(bytes, err = null) { this.sci.sideSend(Array.isArray(bytes) ? bytes : [bytes], this.cpu.cycles, err); }
   onDiagTx(fn) { return this.on('diagTx', (e) => fn(e.byte, e)); }
   /** Drain the diagnostic bytes received from the PCM since the last call. */
   readDiag() { const d = this.diag.slice(); this.diag.length = 0; return d; }

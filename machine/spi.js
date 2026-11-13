@@ -16,8 +16,11 @@ export class SPI {
     this.spcr = 0x04; this.busyUntil = -Infinity; this.xferEnd = -Infinity; this.acked = true;
     this.wcol = false; this.spsrSaw = false; this.rx = 0;
     this.frame = null; this.prevFd = 0; this.frames = 0;
+    this.hsBusyUntil = -Infinity; this.stalled = false;
   }
   _spif(c) { return !this.acked && c >= this.xferEnd; }
+  /** Smart-device busy line ($0400.3): a short pulse after each strobed byte, or held by the stall fault. */
+  handshakeBusy(c) { return this.stalled || c < this.hsBusyUntil; }
 
   read(off, c) {
     if (off === 0x28) return this.spcr;
@@ -45,7 +48,7 @@ export class SPI {
     const latch = m.asic.latch;
     if (!(latch & 0x04)) {                            // $FD driver selected
       const mode = m.inputs.fdFeedbackMode;
-      this.rx = mode === 'echo' ? v : mode === 'value' ? (m.inputs.fdFeedbackValue & 0xFF) : this.prevFd;
+      this.rx = mode === 'echo' ? v : mode === 'value' ? (m.inputs.fdFeedbackValue & 0xFF) : ((this.prevFd ^ m.inputs.fdFeedbackXor) & 0xFF);
       this.prevFd = v;
       m.outputs.fdByte(v, c);
       return;
@@ -68,6 +71,9 @@ export class SPI {
     if (b.strobed) return;
     b.strobed = true;
     const idx = f.bytes.filter((x) => x.strobed).length - 1;
+    const inp = this.m.inputs;
+    this.hsBusyUntil = c + Math.round(inp.spiBusyUs * this.m.eClock / 1e6);
+    if (inp.spiStallAfter !== null && idx + 1 >= inp.spiStallAfter) this.stalled = true;
     const first = f.bytes.find((x) => x.strobed);
     if (first && first.v === 0x61) {
       const r = this.m.inputs.smartReply;
@@ -87,6 +93,7 @@ export class SPI {
   /** PD5 level change (PORTD write). */
   pd5(level, c) {
     if (!level) { if (!this.frame) this.frame = { start: c, bytes: [] }; return; }
+    this.stalled = false;
     const f = this.frame; this.frame = null;
     if (!f) return;
     const m = this.m;

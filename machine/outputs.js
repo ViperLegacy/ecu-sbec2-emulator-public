@@ -72,7 +72,7 @@ export class Outputs {
     this.ocRise = { 4: -1, 5: -1, 6: -1 };
     this.ocPins = 0;
     this.spark = { raw: null, deg: null, slot: null, cyl: null, count: 0, lastCycle: -1 };
-    this.fc = null; this.fd = null; this.latch = 0;
+    this.fc = null; this.fd = null; this.latch = 0; this.asdOnAt = -Infinity;
     this.ais = { phaseIndex: -1, pattern: null, steps: 0, bytes: 0, invalid: 0, lastCycle: -1 };
     this.tach = { toggles: 0, lastCycle: -1, periodCycles: 0, avgPeriodCycles: 0 };
     this._tachHist = [];
@@ -103,9 +103,16 @@ export class Outputs {
     this.injector(slot, ticks, 'oc', SLOT_PATH[slot].resource, r);
   }
 
+  /** ASD relay output powered: commanded on ($FD.4 = 0 as last shifted to the driver) for the pull-in time. */
+  asdFeed(c) {
+    if (this.fd === null || (this.fd & 0x10)) return false;
+    return c - this.asdOnAt >= this.m.inputs.asdPullInMs * this.m.eClock / 1000;
+  }
+
   fdByte(v, cycle) {
     if (v !== this.fd) {
       const old = this.fd; this.fd = v;
+      if (!(v & 0x10) && (old === null || (old & 0x10))) this.asdOnAt = cycle;
       this.m.log('fd', { value: v, old, bits: decodeBits(v, FD_BITS) }, cycle);
     }
   }

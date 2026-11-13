@@ -195,8 +195,19 @@ export function createInputsPanel(app) {
   o2Mode.addEventListener('change', () => { I().o2Mode = o2Mode.value; });
   syncs.push(() => { o2Mode.value = I().o2Mode; });
 
+  const numIn = (get, set, { min = 0, max = 255, step = 1, width = 48, title = '' } = {}) => {
+    const f = h('input.num', { type: 'number', min, max, step, title, style: { width: width + 'px' } });
+    f.addEventListener('change', () => { set(f.value === '' ? null : Number(f.value)); syncs.forEach((g) => g()); });
+    syncs.push(() => { const v = get(); f.value = v === null || v === undefined ? '' : v; });
+    return f;
+  };
+  const feedMode = h('select', { title: INPUT_INFO.relayFeed.fn }, h('option', { value: 'follow' }, 'follows ASD command'), h('option', { value: 'level' }, 'always on'));
+  feedMode.addEventListener('change', () => { I().relayFeedMode = feedMode.value; });
+  syncs.push(() => { feedMode.value = I().relayFeedMode; });
+  const rxErr = h('select', { title: 'receive the next side-channel bytes with an SCSR error flag (FD26 path)' }, h('option', { value: '' }, 'no error'), h('option', { value: 'nf' }, 'noise (NF)'), h('option', { value: 'fe' }, 'framing (FE)'));
+
   const sideTxt = h('input.hex', { type: 'text', style: { width: '80px' }, value: '05', spellcheck: false });
-  const sideSend = (bytes) => { M().sideChannelSend(bytes); app.flash(`side channel (R8=1) <- ${hexBytes(bytes)}`); };
+  const sideSend = (bytes) => { M().sideChannelSend(bytes, rxErr.value || null); app.flash(`side channel (R8=1) <- ${hexBytes(bytes)}${rxErr.value ? ' with ' + rxErr.value.toUpperCase() : ''}`); };
   const sideBtn = (label, byte, title) => h('button.sm', { title, on: { click: () => sideSend([byte]) } }, label);
 
   const eclk = h('select', { title: 'E clock (ASSUMED 2 MHz). Changing it rebuilds the machine (EEPROM, keep-alive RAM and inputs kept).' },
@@ -209,8 +220,12 @@ export function createInputsPanel(app) {
     disc('key', 'Key ON', () => I().key, (v) => { I().key = v; }, [h('span.hint', 'off -> F024 power-down (~5 s), on again -> jmp 944E')]),
     h('div.drow', check('Battery connected', () => I().batteryConnected, (v) => { I().batteryConnected = v; }, 'keep-alive RAM 0000-0043 survives "Power cycle"'),
       h('span.res', 'keep-alive RAM 0000-0043 at power cycle'), conf('high')),
-    disc('relayFeed', 'ASD / relay feed', () => I().relayFeed, (v) => { I().relayFeed = v; }, [h('span.hint', 'drop it -> code 2C')]),
-    disc('spiBusy', 'SPI busy (handshake = 1)', () => I().spiBusy, (v) => { I().spiBusy = v; }, [h('span.hint', 'forces time-outs, code 44')]),
+    disc('relayFeed', 'ASD / relay feed', () => I().relayFeed, (v) => { I().relayFeed = v; }, [feedMode, h('span.hint', 'unticked -> code 2C')]),
+    disc('spiBusy', 'SPI busy (handshake = 1)', () => I().spiBusy, (v) => { I().spiBusy = v; }, [h('span.hint', 'stuck busy: time-outs, code 44')]),
+    h('div.drow', h('span', 'SPI busy per byte '), numIn(() => I().spiBusyUs, (v) => { I().spiBusyUs = Math.max(0, v ?? 0); }, { max: 1000, title: INPUT_INFO.spiBusyUs.fn }), h('span.unit', 'us'),
+      h('span', ' stall after byte '), numIn(() => I().spiStallAfter, (v) => { I().spiStallAfter = v && v > 0 ? v : null; }, { max: 8, width: 40, title: INPUT_INFO.spiStallAfter.fn + ' (empty = never)' }),
+      h('span.res', INPUT_INFO.spiBusyUs.resource), evid('GUESS time')),
+    h('div.drow', h('button.sm', { title: INPUT_INFO.xirq.fn, on: { click: () => { M().pulseXirq(); app.flash('XIRQ asserted: restart through 9400'); } } }, 'Pulse XIRQ'), h('span.res', INPUT_INFO.xirq.resource), conf('low')),
     disc('in0400b5', '$0400.5', () => I().in0400b5, (v) => { I().in0400b5 = v; }),
     disc('in0400b7', '$0400.7', () => I().in0400b7, (v) => { I().in0400b7 = v; }),
     h('div.drow', h('span', '$0401 hi nibble ', nib), h('span.res', INPUT_INFO.in0401hi.resource), conf(INPUT_INFO.in0401hi.confidence)),
@@ -225,10 +240,15 @@ export function createInputsPanel(app) {
       hexField(() => (I().ccdRxMessage ? hexBytes(I().ccdRxMessage) : ''), (b) => { if (b.length !== 3) throw new Error('3 bytes'); I().ccdRxMessage = b; }, { width: 70 }),
       h('span.res', INPUT_INFO.ccdRxMessage.resource), evid('GUESS 21 00 00'), conf('low')),
     h('div.drow', h('span', '$FD feedback '), fdMode, hexField(() => hex2(I().fdFeedbackValue), (b) => { I().fdFeedbackValue = b[0] ?? 0; }, { width: 32 }),
+      h('span', ' stuck bits (XOR) '), hexField(() => hex2(I().fdFeedbackXor), (b) => { I().fdFeedbackXor = b[0] ?? 0; }, { width: 32 }),
       h('span.res', INPUT_INFO.fdFeedbackMode.resource), conf('low')),
-    h('div.drow', h('span', 'O2 sensors '), o2Mode, h('span.res', INPUT_INFO.o2Mode.resource), evid('GUESS plant')),
+    h('div.drow', h('span', 'O2 sensors '), o2Mode,
+      h('span', ' fuelling error '), numIn(() => I().o2BiasCounts, (v) => { I().o2BiasCounts = v ?? 0; }, { min: -100, max: 100, width: 52, title: 'trim (1/256 fuel) at which the mixture is stoichiometric. 0 = perfect fuelling: the adaptive cells never learn. +30 = engine lean, the cells learn within a minute' }),
+      h('span.res', INPUT_INFO.o2Mode.resource), evid('GUESS plant')),
+    h('div.drow', check('Left O2 open circuit', () => I().o2Open[0], (v) => { I().o2Open[0] = v; }, INPUT_INFO.o2Open.fn), check('Right O2 open circuit', () => I().o2Open[1], (v) => { I().o2Open[1] = v; }, INPUT_INFO.o2Open.fn),
+      h('span.res', INPUT_INFO.o2Open.resource), h('span.hint', 'codes 41 / 20 after about 3.5 min warm running')),
     h('h3', 'Ignition Control Module status injection (SCI R8 = 1)'),
-    h('div.drow', sideTxt, h('button.sm', { on: { click: () => { try { sideSend(parseHexBytes(sideTxt.value)); } catch (e) { app.flash(e.message, 'bad'); } } } }, 'Send'),
+    h('div.drow', sideTxt, h('button.sm', { on: { click: () => { try { sideSend(parseHexBytes(sideTxt.value)); } catch (e) { app.flash(e.message, 'bad'); } } } }, 'Send'), rxErr,
       h('span.res', 'bit2 = 1 -> OR into $0115, else $0116'), conf('medium')),
     h('div.drow.wrap',
       sideBtn('$0115 b0 (code 15)', 0x05, 'injector #1 status (INFERRED)'), sideBtn('$0115 b1 (code 45)', 0x06, 'injector #5 status (INFERRED)'),

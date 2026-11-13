@@ -63,7 +63,7 @@ for (const [sel, a, fn] of [[2, 0xFD, (v) => v], [3, 0xFC, (v) => v ^ 0x08]]) {
   const { r, snaps: s } = req([0x1A, sel], { count: 4, timeoutMs: 1000 });
   check(`1A ${hx(sel)} streams $${hx(a)}${sel === 3 ? ' ^ 08' : ''}`, r.length === 4 && r[0] === 0x1A && r[1] === sel && (r[2] === fn(s[2][a]) || r[2] === fn(s[1][a])), `${hex(r)} RAM ${hx(s[2]?.[a] ?? 0)}`);
 }
-{ const { r } = req([0x1A, 0x04], { count: 4, timeoutMs: 1000 }); check('1A 04 streams $0400 & 70 (key on, relay feed = 10)', r.length === 4 && r[2] === 0x10, hex(r)); }
+{ const { r } = req([0x1A, 0x04], { count: 4, timeoutMs: 1000 }); check('1A 04 streams $0400 & 70 (key on, ASD off after the prime: relay feed = 00)', r.length === 4 && r[2] === 0x00, hex(r)); }
 m.sciRequest([0x00]);
 // unknown commands: echo then 00
 for (const c of [0x01, 0x05, 0x09, 0x0B, 0x0F, 0x24, 0x7F, 0xA5]) {

@@ -19,6 +19,7 @@ export class SCI {
     const inFlight = this.rxPending;
     this.baud = 0x04; this.sccr1 = 0; this.sccr2 = 0;
     this.r8 = 0; this.rxData = 0; this.rdrf = false; this.or = false; this.idle = false;
+    this.nf = false; this.fe = false;
     this.txBuf = null;       // {byte, t8, pc}
     this.shift = null;       // {byte, t8, pc, end}
     this.rxLineFree = 0;     // cycle when the RX line is free for the next frame
@@ -66,8 +67,8 @@ export class SCI {
       case 0x2C: return (this.sccr1 & 0x7F) | (this.r8 ? 0x80 : 0);
       case 0x2D: return this.sccr2;
       case 0x2E: return (this._tdre() ? 0x80 : 0) | (this._tc() ? 0x40 : 0) | (this.rdrf ? 0x20 : 0) |
-        (this.idle ? 0x10 : 0) | (this.or ? 0x08 : 0);
-      case 0x2F: this.rdrf = false; this.or = false; this.idle = false; return this.rxData;
+        (this.idle ? 0x10 : 0) | (this.or ? 0x08 : 0) | (this.nf ? 0x04 : 0) | (this.fe ? 0x02 : 0);
+      case 0x2F: this.rdrf = false; this.or = false; this.idle = false; this.nf = false; this.fe = false; return this.rxData;
     }
     return 0;
   }
@@ -100,7 +101,10 @@ export class SCI {
       const p = this.rxPending; this.rxPending = null; this.rxAt = Infinity;
       if (this.sccr2 & 0x04) {
         if (this.rdrf) this.or = true;
-        else { this.rxData = p.byte; this.r8 = p.r8; this.rdrf = true; }
+        else {
+          this.rxData = p.byte; this.r8 = p.r8; this.rdrf = true;
+          if (p.err === 'nf') this.nf = true; else if (p.err === 'fe') this.fe = true;
+        }
       }
       this.m._onSciRx(p.byte, p.r8, at, !!(this.sccr2 & 0x04));
       if (p.r8 === 0 && p.fromTester) {
@@ -157,8 +161,9 @@ export class SCI {
     this._next(); this.m.reschedule();
   }
   /** Side-channel status bytes (R8 = 1), sent back to back. */
-  sideSend(bytes, now) {
-    for (const b of bytes) this.rxQueue.push({ byte: b & 0xFF, r8: 1, fromTester: false });
+  /** err: 'nf' (noise) or 'fe' (framing) marks every byte of this call as received with that SCSR error flag. */
+  sideSend(bytes, now, err = null) {
+    for (const b of bytes) this.rxQueue.push({ byte: b & 0xFF, r8: 1, fromTester: false, err });
     this._pump(now);
     this._next(); this.m.reschedule();
   }

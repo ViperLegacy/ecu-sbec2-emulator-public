@@ -1,5 +1,5 @@
 > Live: https://sbec2-emulator.viperecu.com/  
-> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, a76fcf8) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
+> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, a5d035f) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
 
 # 68HC11 emulator (SBEC2 board model)
 
@@ -34,6 +34,7 @@ node run_headless.mjs --scenario crank --rpm 250 --ms 2000
 node run_headless.mjs --scenario idle --rpm 800 --ms 5000 --sci "16 80" --sci "10"
 node run_headless.mjs --scenario run --rpm 3000 --map 80 --mph 50 --ms 2000 --events 20 --types inj,spark
 node run_headless.mjs --scenario revlimit --json
+node tools/coverage.mjs                              # firmware execution coverage (81 %); gaps explained in ../findings/COVERAGE_DIG.txt
 node run_headless.mjs --sci "14 05" --count 10          # stream: 10 reply bytes after the echo
 ```
 
@@ -162,6 +163,9 @@ Everything listed here is shown in the GUI with its tag.
 | Crank / cam shapes | 20 TIC1 edges per 720 deg and the single / double / single cam pattern match the 1995 manual. Edge spacing (default even; `pairedEdgeAngles(18)` is a GUESS), polarity and phase to TDC: unmeasured |
 | Cylinder numbering | slot -> cylinder 5 8 7 2 1 10 9 4 3 6: high (three independent derivations). Coil number to cylinder pair: inferred |
 | Physical outputs | fans, A/C clutch, ASD, MIL, skip-shift, purge identified from their control laws (0 = ON except purge). `$FD` b2 (reverse lockout?), `$FC` b3, `$FD` b3, `$0400` b5/b7: still open |
+| ASD feed / handshake | `$0400.4` follows the ASD command after `asdPullInMs` (3 ms **GUESS**); `$0400.3` is busy `spiBusyUs` (20 us **GUESS**) after each smart-device byte. The firmware waits for both |
+| Flash writes | JEDEC unlock + one data store programs a byte, as the 1B monitor does; write time (5 ms) and part type are **GUESS** |
+| Engine plant | none: rpm ignores the idle-air motor, and the default O2 plant is perfect, so adaptive cells only learn with a fuelling error (`inputs.o2BiasCounts`) |
 | O2 sensors | default is a switching model driven by the firmware's own fuel trim (**GUESS** plant, `inputs.o2Mode`); `fixed` holds the slider value |
 | COP | CONFIG.NOCOP unknown; COP model off by default (`cop: true` / GUI option) |
 | CCD message | the 93/80 SPI reply is a **GUESS** `21 00 00`; with none, fuel is inhibited ~2 s after key-on (`ccdRxMessage = null`) |
