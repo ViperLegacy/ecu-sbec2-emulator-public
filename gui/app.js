@@ -14,6 +14,7 @@ import { createSciPanel } from './panel_sci.js';
 import { createWatchPanel } from './panel_watch.js';
 import { createMapsPanel } from './panel_maps.js';
 import { createLogPanel } from './panel_log.js';
+import { createDisasmPanel } from './panel_disasm.js';
 import { createTuningPanel } from './panel_tuning.js';
 import { Calibration } from './calibration.js';
 import { createWorkspaces } from './workspaces.js';
@@ -141,6 +142,7 @@ class App {
       m.run(chunk);
       emuDone += chunk;
       this.seq.poll(m);
+      if (this.paused) break;                 // a breakpoint paused the emulation
       if (performance.now() - t0 > budget) break;
     }
     const host = performance.now() - t0;
@@ -250,6 +252,7 @@ class App {
       ['ram', 'RAM', createWatchPanel],
       ['maps', 'Maps', createMapsPanel],
       ['tuning', 'Tuning', createTuningPanel],
+      ['disasm', 'Disassembly', createDisasmPanel],
       ['log', 'CPU & log', createLogPanel],
     ]) {
       if (id === 'tuning' && this.generic) continue;

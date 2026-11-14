@@ -1,5 +1,5 @@
 > Live: https://sbec2-emulator.viperecu.com/  
-> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, 721910f) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
+> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, 4fae062) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
 
 # 68HC11 emulator (SBEC2 board model)
 
@@ -94,7 +94,7 @@ machine/
   stimulus.js        crank (20 TIC1 edges per 720 deg) and cam (IRQ) generator, rpm ramps, VSS
   scenarios.js       key-on, crank, start, key-off helpers
 rom/make_rom.mjs     builds rom/viper_rom.js (image + EEPROM + data/*.json as one module, no fetch)
-gui/                 app.js (loop and toolbar) + workspaces for scope, inputs, outputs, SCI, RAM, maps, tuning, and log
+gui/                 app.js (loop and toolbar) + workspaces for scope, inputs, outputs, SCI, RAM, maps, tuning, disassembly and log
 serve.mjs            static http server for the GUI
 ```
 
@@ -122,6 +122,12 @@ and engine telemetry visible. Related views within a workspace have their own ta
   Applying a draft adjusts the emulator image's checksum at `$800C` and preserves the
   identification bytes, including the expected sum at `$8005`. Reloading the page starts
   a fresh calibration session.
+- **Disassembly:** the listing around the PC, following it live (routine names, labels, RAM and register
+  names; code outside the analysis code map, such as the SCI 20 worker at `$0492`, is decoded on the fly).
+  Beside it: registers and CCR flags (changes highlighted while paused), the current instruction's operand
+  address and value and whether its branch is taken, the memory behind X / Y / SP, return addresses found on
+  the stack, and an optional trace of the last 64 instructions. Click the gutter (or F9) for a breakpoint;
+  **Step**, **Step over** and **Run to selected** (or double-click a row) pause the emulation.
 - **Event log / CPU:** the log, CPU state and machine faults.
 
 Toolbar: speed, step, reset, power cycle, key cycle, the six scenarios and EEPROM/keep-alive

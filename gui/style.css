@@ -259,3 +259,46 @@ table.watch tr.chg td { background: var(--chg); }
 .toast.show { opacity: 1; } .toast.bad { border-color: var(--bad); color: var(--bad); }
 
 .image-notice { margin: 6px 10px 0; padding: 7px 10px; border: 1px solid var(--accent); border-radius: 5px; background: var(--box); color: var(--fg); font-size: 12px; line-height: 1.45; }
+
+/* ---- disassembly / CPU ------------------------------------------------------------------------------ */
+.p-disasm .sep { display: inline-block; width: 1px; height: 16px; background: var(--line); margin: 0 4px; vertical-align: middle; }
+.dcols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 340px); gap: 8px; align-items: start; }
+.dlist { font: 11.5px/1.45 var(--mono); background: var(--box); border: 1px solid var(--line); border-radius: 4px; padding: 3px 0;
+  height: min(70vh, 720px); overflow: hidden; outline: none; user-select: text; }
+.dlist:focus-visible { border-color: var(--accent); }
+.dl { display: grid; grid-template-columns: 16px 40px 118px minmax(150px, max-content) minmax(0, 1fr); gap: 0 6px; padding: 0 6px 0 0; white-space: nowrap; cursor: default; }
+.dl:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.dl .dg { cursor: pointer; text-align: center; color: var(--accent); font-weight: 700; }
+.dl .dg:hover { background: color-mix(in srgb, var(--bad) 25%, transparent); }
+.dl .da { color: var(--dim); } .dl .db { color: var(--dim); overflow: hidden; } .dl .dt { color: var(--fg); }
+.dl .dc { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+.dl.data .dt { color: var(--dim); }
+.dl.bp .dg::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); vertical-align: -1px; }
+.dl.bp.pc .dg::before { margin-right: -9px; }
+.dl.pc { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.dl.pc .dt { font-weight: 700; }
+.dl.sel { outline: 1px dashed var(--accent); outline-offset: -1px; }
+.dl.hot:not(.pc) { background: color-mix(in srgb, var(--mil) 10%, transparent); }
+.dlab { color: var(--accent); padding: 4px 6px 0 62px; font-weight: 600; }
+.dnote { color: var(--mil); padding: 2px 8px; }
+.go { color: var(--accent); cursor: pointer; } .go:hover { text-decoration: underline; }
+.dim { color: var(--dim); }
+.dside .box { margin-bottom: 6px; }
+.dreg .rr { display: grid; grid-template-columns: 42px 46px minmax(0, 1fr); gap: 6px; align-items: center; padding: 1px 2px; border-radius: 3px; }
+.dreg .rr.chg { background: var(--chg); }
+.dreg .rk, .dp .rk { color: var(--dim); }
+.dreg .rv { font-weight: 600; } .dreg .rn { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flags { display: inline-flex; gap: 2px; }
+.flag { font: 10.5px/15px var(--mono); width: 15px; text-align: center; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); }
+.flag.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.flag.chg { box-shadow: 0 0 0 2px var(--chg); }
+.dcurtext { font-weight: 600; margin-bottom: 3px; }
+.dinfo > div { margin: 1px 0; }
+.dp { margin-bottom: 4px; } .dp .rk { display: inline-block; width: 38px; } .dpb { color: var(--dim); padding-left: 38px; }
+.dstkbytes { display: flex; flex-wrap: wrap; gap: 0 5px; color: var(--dim); margin-top: 3px; font-size: 11px; }
+.dcalls > div { margin: 1px 0; }
+.dtrclist { max-height: 260px; overflow: auto; font-size: 11px; }
+.dbps { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.bpchip { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--bad); border-radius: 3px; padding: 0 0 0 4px; font: 11px var(--mono); }
+.bpchip button.x { padding: 0 4px; border: 0; background: none; }
+@media (max-width: 900px) { .dcols { grid-template-columns: 1fr; } .dlist { height: 55vh; } .dl { grid-template-columns: 14px 38px 0 minmax(130px, max-content) minmax(0, 1fr); } .dl .db { display: none; } .dlab { padding-left: 52px; } }
