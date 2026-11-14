@@ -3,6 +3,7 @@
 // and decoding (part number, codes with names, status word, 14 nn with RAM name, 22 words, 15 reads).
 
 import { h, fill, tag, setText } from './dom.js';
+import { stageWorkerRequests, verifyWorkerRequests, programByteRequests, exampleEdit, workerHeader, FLASH_WORKER_T0 } from '../machine/flash_worker.js';
 import { hex2, hexBytes, parseHexBytes } from './format.js';
 import { buildSciIndex, decodeReply, findUnsafe, nextParserStates, PARSER_IDLE, PARSER_UNKNOWN, STREAM_CMDS, CAR_VECTORS } from './sci_decode.js';
 
@@ -58,7 +59,7 @@ export function createSciPanel(app) {
   selSel.addEventListener('change', () => { if (selSel.value) input.value = `${cmdSel.value} ${selSel.value}`; });
   unsafeCb.addEventListener('change', () => { unsafe = unsafeCb.checked; fillCmds(); });
 
-  function send(req, { display = null, expect = null, decodeReq = null } = {}) {
+  function send(req, { display = null, expect = null, decodeReq = null, expectLabel = null } = {}) {
     if (!req.length) return;
     // The PCM takes the byte after a complete command (its argument bytes included) as a new command, so a typed
     // "10 13 01" would run 13 01: check every command position, not just the first byte.
@@ -66,7 +67,7 @@ export function createSciPanel(app) {
     if (c && !unsafe) { app.flash(`${c.hex} ${c.name} is UNSAFE here (the PCM may be in high-speed mode or still owed argument bytes): enable the unsafe switch first`, 'bad'); return; }
     // an unsafe command (monitor mode 1B, 1D F4 40, ...) leaves the parser in a state the gate does not model
     parser = c ? PARSER_UNKNOWN : nextParserStates(index, parser, req);
-    queue.push({ req, display: display || hexBytes(req), expect, decodeReq: decodeReq || req });
+    queue.push({ req, display: display || hexBytes(req), expect, expectLabel, decodeReq: decodeReq || req });
     if (!cur || cur.done) next();
   }
   function next() {
@@ -93,7 +94,7 @@ export function createSciPanel(app) {
     const lines = [h('b', d.title), ...d.lines.map((l) => h('div', l))];
     if (tr.expect && tr.done) {
       const ok = tr.expect.length === bytes.length && tr.expect.every((b, i) => b === bytes[i]);
-      lines.push(h('div', { class: ok ? 'ok' : 'bad' }, ok ? `MATCHES car: ${hexBytes(tr.expect)}` : `car expects ${hexBytes(tr.expect)}`));
+      lines.push(h('div', { class: ok ? 'ok' : 'bad' }, tr.expectLabel ? (ok ? 'as expected' : `expected ${hexBytes(tr.expect)}`) : ok ? `MATCHES car: ${hexBytes(tr.expect)}` : `car expects ${hexBytes(tr.expect)}`));
     }
     fill(tr.dec, ...lines);
     if (tr.stream) {
@@ -125,6 +126,27 @@ export function createSciPanel(app) {
     });
   }
 
+  // Flash-write worker example (machine/flash_worker.js, ../FLASH_WRITE_WORKER.txt): stage the 39-byte worker with
+  // 1E, read it back with 15, then per byte stage target + data, commit with 20 and read the cell back.
+  function flashExample() {
+    if (!unsafe) { app.flash('the flash-write example sends 1E and 20: enable the unsafe switch first', 'bad'); return; }
+    if (M().generic) { app.flash('the example is for the 04763555 firmware', 'bad'); return; }
+    let patches;
+    try { patches = exampleEdit((a) => M().romByte(a)); } catch (e) { app.flash(e.message, 'bad'); return; }
+    const { L, sum } = workerHeader();
+    const a4 = (v) => v.toString(16).toUpperCase().padStart(4, '0');
+    for (const r of stageWorkerRequests()) send(r, { expect: [...r, 0xE5], expectLabel: 'expected' });
+    const want = [L, sum, ...FLASH_WORKER_T0];
+    verifyWorkerRequests().forEach((r, i) => send(r, { expect: [...r, want[i]], expectLabel: 'expected' }));
+    for (const p of patches) {
+      const reqs = programByteRequests(p.addr, p.data);
+      reqs.slice(0, 3).forEach((r) => send(r, { expect: [...r, 0xE5], expectLabel: 'expected' }));
+      send(reqs[3], { expect: [...reqs[3], 0xE4], expectLabel: 'expected', display: `${hexBytes(reqs[3])}   run worker: $${a4(p.addr)} ${hex2(p.old)} -> ${hex2(p.data)} (${p.label})` });
+      send(reqs[4], { expect: [...reqs[4], p.data], expectLabel: 'expected', display: `${hexBytes(reqs[4])}   read back $${a4(p.addr)}` });
+    }
+    app.flash(`flash-write example queued: ${patches.map((p) => `$${a4(p.addr)} ${hex2(p.old)}->${hex2(p.data)}`).join(', ')}. Key off afterwards: no code 02`);
+  }
+
   const quick = (label, bytes, title = '', opts = {}) => h('button.sm', { title, on: { click: () => send(bytes, opts) } }, label);
   const el = h('section.panel.p-sci',
     h('h2', 'SCI SCAN TOOL ', h('span.hint', 'diagnostic channel (T8/R8 = 0); the tester sends the next byte after the PCM echo')),
@@ -141,7 +163,8 @@ export function createSciPanel(app) {
       h('button.sm', { title: 'run the four car vectors in sequence and compare', on: { click: () => CAR_VECTORS.forEach((v) => send(v.req, { expect: v.expect })) } }, 'car self-check')),
     h('div.scirow', h('span', '14 live read '), sel14, h('button.sm', { on: { click: () => send([0x14, parseInt(sel14.value, 16)]) } }, 'start'),
       h('button.sm', { title: 'send 00 (no-op) to end the stream', on: { click: () => send([0x00]) } }, 'stop (00)'),
-      h('button.sm', { on: { click: () => fill(out, ) } }, 'clear console')),
+      h('button.sm', { on: { click: () => fill(out, ) } }, 'clear console'),
+      h('button.sm', { title: 'EMULATOR ONLY. Programs one VE cell ($DB -> $DA, both map copies) and a checksum byte through the command-20 RAM worker: 1E staging, 15 verify, 20 commit, 15 read-back. Needs the unsafe switch. See FLASH_WRITE_WORKER.txt', on: { click: flashExample } }, 'flash-write example')),
     live, out);
   fillCmds(); showCmd(null);
 

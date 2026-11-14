@@ -1,5 +1,5 @@
 > Live: https://sbec2-emulator.viperecu.com/  
-> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, a5d035f) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
+> Published from the private ViperLegacy/ecu repo (ecu/sbec2/viper/emulator, 721910f) by `tools/publish_public.mjs`; do not edit here. Paths like `../data/...` or `../findings/...` below refer to that repo.
 
 # 68HC11 emulator (SBEC2 board model)
 
@@ -35,6 +35,7 @@ node run_headless.mjs --scenario idle --rpm 800 --ms 5000 --sci "16 80" --sci "1
 node run_headless.mjs --scenario run --rpm 3000 --map 80 --mph 50 --ms 2000 --events 20 --types inj,spark
 node run_headless.mjs --scenario revlimit --json
 node tools/coverage.mjs                              # firmware execution coverage (81 %); gaps explained in ../findings/COVERAGE_DIG.txt
+node tools/flash_write_example.mjs                    # command-20 worker programs a VE cell + checksum byte (emulator only; --no-fix, --raise)
 node run_headless.mjs --sci "14 05" --count 10          # stream: 10 reply bytes after the echo
 ```
 

@@ -56,13 +56,16 @@ const codes = (m) => Array.from(m.mem.slice(0x3C, 0x44)).filter((c) => c);   // 
 {
   const m = new ViperMachine();
   keyOnEngineOff(m, 200);
-  const A = 0x9500, old = m.mem[A], nv = old ^ 0x41;
+  const A = 0x9500, old = m.mem[A], nv = old & ~0x41 & 0xFF;   // only 1 -> 0 bits: a byte program cannot set a bit
   m._write(A, 0x00, m.cycles);
   check('a plain store to the flash does nothing', m.mem[A] === old);
   m._write(0xD555, 0xAA, m.cycles); m._write(0xAAAA, 0x55, m.cycles); m._write(0xD555, 0xA0, m.cycles); m._write(A, nv, m.cycles);
   check('during the write the cell reads back with bit 7 inverted', m.mem[A] === (nv ^ 0x80));
   m.inputs.key = true; m.run(m.flashWriteMs + 1);
-  check('after the write time the cell holds the new byte (image too)', m.mem[A] === nv && m.rom[A - 0x8000] === nv);
+  check('after the write time the cell holds the new byte (image too)', nv !== old && m.mem[A] === nv && m.rom[A - 0x8000] === nv);
+  m._write(0xD555, 0xAA, m.cycles); m._write(0xAAAA, 0x55, m.cycles); m._write(0xD555, 0xA0, m.cycles); m._write(A, 0xFF, m.cycles);
+  m.run(m.flashWriteMs + 1);
+  check('a program cannot set bits: the cell stays old AND new', m.mem[A] === nv);
 }
 // ---- SCI receive errors ---------------------------------------------------------------------------------
 {

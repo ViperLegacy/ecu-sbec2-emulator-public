@@ -108,8 +108,10 @@ export class ViperMachine {
     this.stimulus = new Stimulus(this);
     // External flash programming (JEDEC AA->D555, 55->AAAA, A0->D555, then the data store), as the firmware's
     // RAM routine at 0490 does it. While the write is in progress the cell reads back with bit 7 inverted
-    // (DATA polling); flashWriteMs is a GUESS (the part type is not in the image). flashPage > 1 models a
-    // page-write part: the other bytes of the page are erased to FF by a one-byte load.
+    // (DATA polling); flashWriteMs is a GUESS (the part type is not in the image). flashPage = 1 (default) is a
+    // byte-program part: a program can only clear bits, the cell ends as old AND new, and a value with a 0 -> 1
+    // bit never reads back. flashPage > 1 models a page-write part: the byte is replaced and the other bytes of
+    // its page are erased to FF by a one-byte load.
     this.flash = { state: 0, next: Infinity, addr: -1, value: 0, writes: 0, service: (at) => this._flashDone(at) };
     this.flashWriteMs = opts.flashWriteMs ?? 5;
     this.flashPage = opts.flashPage ?? 1;
@@ -331,10 +333,11 @@ export class ViperMachine {
         const base = a - ((a - 0x8000) % this.flashPage);
         for (let i = 0; i < this.flashPage; i++) { const x = base + i; if (x !== a && !(x >= 0xB600 && x < 0xB800)) { this.mem[x] = 0xFF; this.rom[x - 0x8000] = 0xFF; } }
       }
-      f.addr = a; f.value = v; f.writes++;
+      const old = this.rom[a - 0x8000];
+      f.addr = a; f.value = this.flashPage > 1 ? v : (old & v); f.writes++;
       this.mem[a] = v ^ 0x80;                  // DATA polling: complement of bit 7 until the write completes
       f.next = c + this.msToCycles(this.flashWriteMs);
-      this.log('flash', { addr: a, value: v, old: this.rom[a - 0x8000] }, c);
+      this.log('flash', { addr: a, value: v, old, result: f.value }, c);
       this.reschedule();
       return;
     }
